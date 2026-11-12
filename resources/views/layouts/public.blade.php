@@ -11,7 +11,7 @@
     <header class="border-b border-border bg-card">
         <div class="mx-auto max-w-5xl px-4 py-4 flex items-center justify-between">
             <a href="{{ route('home') }}" wire:navigate class="flex items-center gap-2">
-                <span class="inline-flex items-center justify-center rounded-lg bg-primary text-white font-extrabold px-2 py-1.5 text-xs">AMS</span>
+                <img src="{{ asset('images/logo.png') }}" alt="AM.E.S.CO" class="h-10 w-auto">
                 <span class="font-extrabold tracking-tight">E-VOTE</span>
             </a>
             <nav class="flex items-center gap-4 text-sm font-medium">

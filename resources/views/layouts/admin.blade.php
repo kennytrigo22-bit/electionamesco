@@ -54,7 +54,9 @@
     <aside :class="collapsed ? 'w-[72px]' : 'w-[252px]'" class="sticky top-0 hidden h-screen shrink-0 flex-col bg-sidebar text-sidebar-foreground transition-[width] duration-200 lg:flex">
         <div class="flex h-16 items-center gap-3 border-b border-sidebar-border px-4" :class="collapsed && 'justify-center px-2'">
             <a href="{{ route('admin.dashboard') }}" class="flex items-center gap-3 overflow-hidden">
-                <span class="inline-flex shrink-0 items-center justify-center rounded-lg bg-primary text-white font-extrabold px-2 py-1.5 text-xs">AMS</span>
+                <span class="inline-flex shrink-0 items-center justify-center rounded-lg bg-card p-1 shadow-card">
+                    <img src="{{ asset('images/logo.png') }}" alt="AM.E.S.CO" class="h-8 w-auto">
+                </span>
                 <span x-show="!collapsed" class="flex flex-col leading-none">
                     <span class="text-sm font-extrabold tracking-tight">E-VOTE</span>
                     <span class="mt-1 text-[10.5px] text-sidebar-muted">Administration</span>
@@ -106,7 +108,9 @@
         <div class="absolute inset-0 bg-black/40" @click="mobileOpen = false"></div>
         <div class="absolute inset-y-0 left-0 w-[272px] flex flex-col bg-sidebar text-sidebar-foreground">
             <div class="flex h-16 items-center gap-3 border-b border-sidebar-border px-4">
-                <span class="inline-flex shrink-0 items-center justify-center rounded-lg bg-primary text-white font-extrabold px-2 py-1.5 text-xs">AMS</span>
+                <span class="inline-flex shrink-0 items-center justify-center rounded-lg bg-card p-1 shadow-card">
+                    <img src="{{ asset('images/logo.png') }}" alt="AM.E.S.CO" class="h-8 w-auto">
+                </span>
                 <span class="text-sm font-extrabold tracking-tight">E-VOTE</span>
             </div>
             <nav class="flex-1 space-y-5 overflow-y-auto px-3 py-4">
