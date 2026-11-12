@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Form;
+use App\Models\FormSubmission;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 use Livewire\WithFileUploads;
@@ -17,22 +18,31 @@ new #[Layout('layouts.public')] class extends Component
 
     public ?int $referenceNumber = null;
 
+    public int $step = 0;
+
+    public string $duplicateError = '';
+
     public function mount(Form $form): void
     {
         abort_unless($form->isOpen(), 404);
 
-        $this->form = $form->load('fields');
+        $this->form = $form->load(['sections.fields', 'fields']);
 
         foreach ($this->form->fields as $field) {
             $this->values[$field->id] = $field->type === 'checkbox' && $field->hasOptions() ? [] : '';
         }
     }
 
-    protected function rulesFor(): array
+    public function visibleFields($section)
+    {
+        return $section->fields->filter(fn ($field) => $field->isVisibleFor($this->values));
+    }
+
+    protected function rulesFor($fields): array
     {
         $rules = [];
 
-        foreach ($this->form->fields as $field) {
+        foreach ($fields as $field) {
             $key = "values.{$field->id}";
 
             $typeRule = match ($field->type) {
@@ -50,11 +60,42 @@ new #[Layout('layouts.public')] class extends Component
         return $rules;
     }
 
+    public function nextStep(): void
+    {
+        $this->validate($this->rulesFor($this->visibleFields($this->form->sections[$this->step])));
+        $this->step++;
+    }
+
+    public function prevStep(): void
+    {
+        $this->step = max(0, $this->step - 1);
+    }
+
     public function submit(): void
     {
         abort_unless($this->form->isOpen(), 404);
 
-        $this->validate($this->rulesFor());
+        $this->validate($this->rulesFor($this->visibleFields($this->form->sections[$this->step])));
+
+        if ($this->form->one_response_per_person) {
+            $emailField = $this->form->fields->firstWhere('type', 'email');
+
+            if ($emailField) {
+                $email = trim((string) ($this->values[$emailField->id] ?? ''));
+
+                if ($email !== '') {
+                    $exists = FormSubmission::where('form_id', $this->form->id)
+                        ->whereHas('values', fn ($q) => $q->where('form_field_id', $emailField->id)->where('value', $email))
+                        ->exists();
+
+                    if ($exists) {
+                        $this->duplicateError = 'Une inscription existe déjà avec cette adresse e-mail. Une seule réponse par personne est autorisée pour ce formulaire.';
+
+                        return;
+                    }
+                }
+            }
+        }
 
         $submission = $this->form->submissions()->create([
             'status' => $this->form->auto_validate ? 'validated' : 'pending',
@@ -65,6 +106,10 @@ new #[Layout('layouts.public')] class extends Component
         ]);
 
         foreach ($this->form->fields as $field) {
+            if (! $field->isVisibleFor($this->values)) {
+                continue;
+            }
+
             $value = $this->values[$field->id] ?? null;
             $filePath = null;
 
@@ -88,9 +133,10 @@ new #[Layout('layouts.public')] class extends Component
 }; ?>
 
 <div class="max-w-2xl mx-auto py-10 px-4">
-    <div class="rounded-2xl border border-border bg-card shadow-card p-6">
-        @if ($submitted)
-            <div class="text-center py-8">
+    @if ($submitted)
+        <div class="overflow-hidden rounded-2xl border border-border bg-card shadow-card">
+            <div class="tricolor h-2"></div>
+            <div class="text-center py-10 px-6">
                 <span class="mx-auto mb-4 flex size-14 items-center justify-center rounded-full bg-success-soft text-success"><x-icon name="check" class="size-7" /></span>
                 <h1 class="text-xl font-bold mb-2">Inscription envoyée !</h1>
                 <p class="text-sm text-muted-foreground">{{ $form->confirmation_message ?: 'Votre inscription a été enregistrée. Elle sera examinée par un administrateur avant validation.' }}</p>
@@ -98,72 +144,110 @@ new #[Layout('layouts.public')] class extends Component
                 <p class="text-lg font-bold tabular text-primary">AMS-{{ now()->year }}-{{ str_pad($referenceNumber, 4, '0', STR_PAD_LEFT) }}</p>
                 <a href="{{ route('home') }}" wire:navigate class="mt-6 inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-deep">Retour à l'accueil</a>
             </div>
-        @else
-            <h1 class="text-xl font-bold mb-1">{{ $form->title }}</h1>
-            <p class="text-muted-foreground mb-6 text-sm">{{ $form->description }}</p>
+        </div>
+    @else
+        <div class="overflow-hidden rounded-2xl border border-border bg-card shadow-card">
+            <div class="tricolor h-2"></div>
+            <div class="p-6 border-b border-border">
+                <img src="{{ asset('images/logo.png') }}" alt="AM.E.S.CO" class="h-10 w-auto mb-4">
+                <h1 class="text-xl font-bold mb-1">{{ $form->title }}</h1>
+                <p class="text-muted-foreground text-sm">{{ $form->description }}</p>
+            </div>
 
-            <form wire:submit="submit" class="space-y-5">
-                @foreach ($form->fields as $field)
-                    <div>
-                        <label class="text-sm font-medium">{{ $field->label }}@if ($field->is_required)<span class="text-destructive"> *</span>@endif</label>
-
-                        @switch($field->type)
-                            @case('textarea')
-                            @case('address')
-                                <textarea wire:model="values.{{ $field->id }}" rows="3" class="mt-1 block w-full rounded-lg border-border text-sm"></textarea>
-                                @break
-                            @case('select')
-                            @case('country')
-                            @case('institution')
-                            @case('level')
-                                <select wire:model="values.{{ $field->id }}" class="mt-1 block w-full rounded-lg border-border text-sm">
-                                    <option value="">—</option>
-                                    @foreach ($field->effectiveOptions() as $option)
-                                        <option value="{{ $option }}">{{ $option }}</option>
-                                    @endforeach
-                                </select>
-                                @break
-                            @case('radio')
-                                <div class="space-y-1 mt-1">
-                                    @foreach ($field->effectiveOptions() as $option)
-                                        <label class="flex items-center gap-2 text-sm"><input type="radio" wire:model="values.{{ $field->id }}" value="{{ $option }}"> {{ $option }}</label>
-                                    @endforeach
-                                </div>
-                                @break
-                            @case('checkbox')
-                                <div class="space-y-1 mt-1">
-                                    @foreach ($field->effectiveOptions() as $option)
-                                        <label class="flex items-center gap-2 text-sm"><input type="checkbox" wire:model="values.{{ $field->id }}" value="{{ $option }}"> {{ $option }}</label>
-                                    @endforeach
-                                </div>
-                                @break
-                            @case('image')
-                                <input type="file" accept="image/*" wire:model="values.{{ $field->id }}" class="mt-1 block w-full text-sm">
-                                @if ($values[$field->id] instanceof \Livewire\Features\SupportFileUploads\TemporaryUploadedFile)
-                                    <img src="{{ $values[$field->id]->temporaryUrl() }}" class="mt-2 h-24 rounded-lg border border-border object-cover">
-                                @endif
-                                @break
-                            @case('file')
-                                <input type="file" wire:model="values.{{ $field->id }}" class="mt-1 block w-full text-sm">
-                                @break
-                            @case('date')
-                                <input type="date" wire:model="values.{{ $field->id }}" class="mt-1 block w-full rounded-lg border-border text-sm">
-                                @break
-                            @case('number')
-                                <input type="number" wire:model="values.{{ $field->id }}" class="mt-1 block w-full rounded-lg border-border text-sm">
-                                @break
-                            @default
-                                <input type="{{ $field->type === 'email' ? 'email' : 'text' }}" wire:model="values.{{ $field->id }}" class="mt-1 block w-full rounded-lg border-border text-sm">
-                        @endswitch
-
-                        @error('values.'.$field->id) <p class="mt-1 text-xs text-destructive">{{ $message }}</p> @enderror
+            @if ($form->show_progress_bar)
+                <div class="px-6 pt-5">
+                    <div class="flex items-center gap-1.5 mb-2">
+                        @foreach ($form->sections as $i => $section)
+                            <span class="h-1.5 flex-1 rounded-full {{ $i <= $step ? 'bg-primary' : 'bg-muted' }}"></span>
+                        @endforeach
                     </div>
-                @endforeach
+                    <p class="text-xs font-semibold uppercase tracking-wider text-primary">Étape {{ $step + 1 }} sur {{ $form->sections->count() }}</p>
+                </div>
+            @endif
 
-                <p class="text-xs text-muted-foreground">Vos données sont traitées uniquement dans le cadre du recensement de l'amicale et de la constitution du fichier électoral.</p>
+            <div class="p-6">
+                @php $section = $form->sections[$step]; @endphp
+                <h2 class="text-lg font-bold mb-1">{{ $section->title }}</h2>
+                @if ($section->description)<p class="text-sm text-muted-foreground mb-4">{{ $section->description }}</p>@endif
 
-                <button type="submit" class="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-white hover:bg-primary-deep">Envoyer mon inscription</button>
-            </form>
-        @endif
-    </div>
+                @if ($duplicateError)
+                    <div class="mb-4 rounded-lg bg-destructive-soft text-destructive text-sm px-3 py-2">{{ $duplicateError }}</div>
+                @endif
+
+                <form wire:submit="{{ $step + 1 === $form->sections->count() ? 'submit' : 'nextStep' }}" class="space-y-5">
+                    @foreach ($this->visibleFields($section) as $field)
+                        <div wire:key="field-{{ $field->id }}">
+                            <label class="text-sm font-medium">{{ $field->label }}@if ($field->is_required)<span class="text-destructive"> *</span>@endif</label>
+
+                            @switch($field->type)
+                                @case('textarea')
+                                @case('address')
+                                    <textarea wire:model.live="values.{{ $field->id }}" rows="3" class="mt-1 block w-full rounded-lg border-border text-sm"></textarea>
+                                    @break
+                                @case('select')
+                                @case('country')
+                                @case('institution')
+                                @case('level')
+                                    <select wire:model.live="values.{{ $field->id }}" class="mt-1 block w-full rounded-lg border-border text-sm">
+                                        <option value="">—</option>
+                                        @foreach ($field->effectiveOptions() as $option)
+                                            <option value="{{ $option }}">{{ $option }}</option>
+                                        @endforeach
+                                    </select>
+                                    @break
+                                @case('radio')
+                                    <div class="space-y-1 mt-1">
+                                        @foreach ($field->effectiveOptions() as $option)
+                                            <label class="flex items-center gap-2 text-sm"><input type="radio" wire:model.live="values.{{ $field->id }}" value="{{ $option }}"> {{ $option }}</label>
+                                        @endforeach
+                                    </div>
+                                    @break
+                                @case('checkbox')
+                                    <div class="space-y-1 mt-1">
+                                        @foreach ($field->effectiveOptions() as $option)
+                                            <label class="flex items-center gap-2 text-sm"><input type="checkbox" wire:model.live="values.{{ $field->id }}" value="{{ $option }}"> {{ $option }}</label>
+                                        @endforeach
+                                    </div>
+                                    @break
+                                @case('image')
+                                    <input type="file" accept="image/*" wire:model="values.{{ $field->id }}" class="mt-1 block w-full text-sm">
+                                    @if ($values[$field->id] instanceof \Livewire\Features\SupportFileUploads\TemporaryUploadedFile)
+                                        <img src="{{ $values[$field->id]->temporaryUrl() }}" class="mt-2 h-24 rounded-lg border border-border object-cover">
+                                    @endif
+                                    @break
+                                @case('file')
+                                    <input type="file" wire:model="values.{{ $field->id }}" class="mt-1 block w-full text-sm">
+                                    @break
+                                @case('date')
+                                    <input type="date" wire:model.live="values.{{ $field->id }}" class="mt-1 block w-full rounded-lg border-border text-sm">
+                                    @break
+                                @case('number')
+                                    <input type="number" wire:model.live="values.{{ $field->id }}" class="mt-1 block w-full rounded-lg border-border text-sm">
+                                    @break
+                                @default
+                                    <input type="{{ $field->type === 'email' ? 'email' : 'text' }}" wire:model.live="values.{{ $field->id }}" class="mt-1 block w-full rounded-lg border-border text-sm">
+                            @endswitch
+
+                            @error('values.'.$field->id) <p class="mt-1 text-xs text-destructive">{{ $message }}</p> @enderror
+                        </div>
+                    @endforeach
+
+                    @if ($step + 1 === $form->sections->count())
+                        <p class="text-xs text-muted-foreground">Vos données sont traitées uniquement dans le cadre du recensement de l'amicale et de la constitution du fichier électoral.</p>
+                    @endif
+
+                    <div class="flex items-center justify-between pt-2">
+                        @if ($step > 0)
+                            <button type="button" wire:click="prevStep" class="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-semibold hover:bg-muted">Précédent</button>
+                        @else
+                            <span></span>
+                        @endif
+                        <button type="submit" class="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-white hover:bg-primary-deep">
+                            {{ $step + 1 === $form->sections->count() ? 'Envoyer mon inscription' : 'Continuer' }}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    @endif
 </div>

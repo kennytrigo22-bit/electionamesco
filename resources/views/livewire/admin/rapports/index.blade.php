@@ -1,7 +1,7 @@
 <?php
 
 use App\Models\ActivityLog;
-use Illuminate\Support\Facades\Response;
+use App\Support\ExcelExport;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 use Livewire\WithPagination;
@@ -12,18 +12,19 @@ new #[Layout('layouts.admin', ['title' => 'Rapports'])] class extends Component
 
     public string $actionFilter = 'all';
 
-    public function exportCsv()
+    public function exportExcel()
     {
         $logs = ActivityLog::with('actor')->latest('created_at')->get();
 
-        return Response::streamDownload(function () use ($logs) {
-            $out = fopen('php://output', 'w');
-            fputcsv($out, ['Date', 'Action', 'Description', 'Auteur']);
-            foreach ($logs as $log) {
-                fputcsv($out, [$log->created_at->format('d/m/Y H:i'), $log->action, $log->description, $log->actor?->name ?? 'Système']);
-            }
-            fclose($out);
-        }, 'rapports-activite.csv');
+        return ExcelExport::download(
+            $logs->map(fn ($log) => [
+                'Date' => $log->created_at->format('d/m/Y H:i'),
+                'Action' => $log->action,
+                'Description' => $log->description,
+                'Auteur' => $log->actor?->name ?? 'Système',
+            ])->all(),
+            'rapports-activite-amesco'
+        );
     }
 
     public function with(): array
@@ -44,7 +45,7 @@ new #[Layout('layouts.admin', ['title' => 'Rapports'])] class extends Component
 <div>
     <x-page-header title="Rapports" description="Journal d'audit des actions administratives — jamais les bulletins de vote individuels.">
         <x-slot:actions>
-            <button type="button" wire:click="exportCsv" class="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-semibold hover:bg-muted"><x-icon name="download" class="size-4" /> Exporter CSV</button>
+            <button type="button" wire:click="exportExcel" class="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-semibold hover:bg-muted"><x-icon name="download" class="size-4" /> Exporter Excel</button>
         </x-slot:actions>
     </x-page-header>
 

@@ -8,8 +8,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable([
-    'title', 'description', 'slug', 'status', 'opens_at', 'closes_at', 'created_by',
-    'max_responses', 'allow_multiple_submissions', 'auto_validate', 'confirmation_message',
+    'title', 'description', 'slug', 'status', 'access', 'opens_at', 'closes_at', 'created_by',
+    'max_responses', 'auto_validate', 'confirmation_message', 'collect_email',
+    'one_response_per_person', 'show_progress_bar',
 ])]
 class Form extends Model
 {
@@ -18,8 +19,10 @@ class Form extends Model
         return [
             'opens_at' => 'datetime',
             'closes_at' => 'datetime',
-            'allow_multiple_submissions' => 'boolean',
             'auto_validate' => 'boolean',
+            'collect_email' => 'boolean',
+            'one_response_per_person' => 'boolean',
+            'show_progress_bar' => 'boolean',
         ];
     }
 
@@ -31,6 +34,11 @@ class Form extends Model
     public function fields(): HasMany
     {
         return $this->hasMany(FormField::class)->orderBy('order');
+    }
+
+    public function sections(): HasMany
+    {
+        return $this->hasMany(FormSection::class)->orderBy('order');
     }
 
     public function submissions(): HasMany

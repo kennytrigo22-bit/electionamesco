@@ -55,10 +55,17 @@ class FormSubmission extends Model
 
     public function displayName(): string
     {
-        $nameField = $this->form->fields->firstWhere('is_identity_name', true);
+        $nameFields = $this->form->fields->where('is_identity_name', true);
 
-        if ($nameField) {
-            return $this->valueFor($nameField)?->value ?? '—';
+        if ($nameFields->isNotEmpty()) {
+            $name = $nameFields
+                ->map(fn (FormField $field) => $this->valueFor($field)?->value)
+                ->filter()
+                ->implode(' ');
+
+            if ($name !== '') {
+                return $name;
+            }
         }
 
         return 'Soumission #'.$this->id;

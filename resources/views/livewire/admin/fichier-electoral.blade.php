@@ -1,8 +1,10 @@
 <?php
 
 use App\Models\ActivityLog;
+use App\Models\FormField;
 use App\Models\FormSubmission;
 use App\Models\Setting;
+use App\Support\ExcelExport;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 use Livewire\WithPagination;
@@ -12,6 +14,22 @@ new #[Layout('layouts.admin', ['title' => 'Fichier électoral'])] class extends 
     use WithPagination;
 
     public string $search = '';
+
+    public ?int $criterionFieldId = null;
+
+    public string $criterionValue = '';
+
+    public bool $showFilters = false;
+
+    public function updatedCriterionFieldId(): void
+    {
+        $this->criterionValue = '';
+    }
+
+    public function resetFilters(): void
+    {
+        $this->reset(['search', 'criterionFieldId', 'criterionValue']);
+    }
 
     public function setEligibility(FormSubmission $submission, string $eligibility): void
     {
@@ -32,22 +50,47 @@ new #[Layout('layouts.admin', ['title' => 'Fichier électoral'])] class extends 
         ActivityLog::record('register.unlocked', 'Fichier électoral déverrouillé');
     }
 
-    public function with(): array
+    public function exportExcel()
     {
-        $base = FormSubmission::where('status', 'validated')->with(['values.field', 'form']);
+        $voters = $this->filteredQuery()->get();
 
-        $query = (clone $base)->latest('submitted_at');
+        return ExcelExport::download(
+            $voters->map(fn ($v) => [
+                'Nom' => $v->displayName(),
+                'Formulaire source' => $v->form->title,
+                'Éligibilité' => $v->eligibilityLabel(),
+            ])->all(),
+            'fichier-electoral-amesco'
+        );
+    }
+
+    protected function filteredQuery()
+    {
+        $query = FormSubmission::where('status', 'validated')->with(['values.field', 'form'])->latest('submitted_at');
 
         if ($this->search !== '') {
             $query->whereHas('values', fn ($q) => $q->where('value', 'like', '%'.$this->search.'%'));
         }
 
-        $voters = $query->paginate(25);
+        if ($this->criterionFieldId && $this->criterionValue !== '') {
+            $query->whereHas('values', fn ($q) => $q->where('form_field_id', $this->criterionFieldId)->where('value', $this->criterionValue));
+        }
+
+        return $query;
+    }
+
+    public function with(): array
+    {
+        $base = FormSubmission::where('status', 'validated')->with(['values.field', 'form']);
+
+        $voters = $this->filteredQuery()->paginate(25);
 
         $duplicates = (clone $base)->get()->countBy(fn ($m) => $m->displayName())->filter(fn ($count) => $count > 1)->count();
 
         return [
             'voters' => $voters,
+            'criterionFields' => FormField::where('is_identity_name', false)->get()->filter->hasOptions()->unique('label')->sortBy('label'),
+            'activeFilters' => $this->criterionFieldId ? 1 : 0,
             'lockedAt' => Setting::get('electoral_register_locked_at'),
             'stats' => [
                 'total' => (clone $base)->count(),
@@ -63,6 +106,7 @@ new #[Layout('layouts.admin', ['title' => 'Fichier électoral'])] class extends 
 <div>
     <x-page-header title="Fichier électoral" description="Registre consolidé des membres validés, base de toutes les listes électorales.">
         <x-slot:actions>
+            <button type="button" wire:click="exportExcel" class="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-semibold hover:bg-muted"><x-icon name="download" class="size-4" /> Exporter Excel</button>
             @if ($lockedAt)
                 <button type="button" wire:click="unlockRegister" class="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-semibold hover:bg-muted"><x-icon name="lock" class="size-4" /> Déverrouiller</button>
             @else
@@ -85,7 +129,41 @@ new #[Layout('layouts.admin', ['title' => 'Fichier électoral'])] class extends 
         <x-stat-card label="Doublons potentiels" :value="$stats['duplicates']" icon="sparkles" tone="destructive" />
     </div>
 
-    <input type="text" wire:model.live.debounce.300ms="search" placeholder="Rechercher..." class="rounded-lg border-border text-sm max-w-xs mb-4">
+    <div class="flex flex-wrap items-center gap-3 mb-4">
+        <input type="text" wire:model.live.debounce.300ms="search" placeholder="Rechercher..." class="rounded-lg border-border text-sm max-w-xs">
+        <button type="button" wire:click="$toggle('showFilters')" class="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-1.5 text-sm font-semibold hover:bg-muted {{ $activeFilters ? 'bg-primary-soft text-primary-deep' : '' }}">
+            <x-icon name="settings" class="size-4" /> Filtres @if($activeFilters)<span class="rounded bg-primary px-1.5 text-[10px] text-white">{{ $activeFilters }}</span>@endif
+        </button>
+    </div>
+
+    @if ($showFilters)
+        <div class="mb-4 grid gap-3 rounded-xl border border-border bg-surface p-4 sm:grid-cols-3">
+            <div>
+                <label class="text-xs font-medium text-muted-foreground">Critère (établissement, niveau, région, quartier...)</label>
+                <select wire:model.live="criterionFieldId" class="mt-1 block w-full rounded-lg border-border text-sm">
+                    <option value="">—</option>
+                    @foreach ($criterionFields as $cf)
+                        <option value="{{ $cf->id }}">{{ $cf->label }}</option>
+                    @endforeach
+                </select>
+            </div>
+            @if ($criterionFieldId)
+                @php $cf = $criterionFields->firstWhere('id', $criterionFieldId); @endphp
+                <div>
+                    <label class="text-xs font-medium text-muted-foreground">Valeur</label>
+                    <select wire:model.live="criterionValue" class="mt-1 block w-full rounded-lg border-border text-sm">
+                        <option value="">—</option>
+                        @foreach ($cf?->effectiveOptions() ?? [] as $option)
+                            <option value="{{ $option }}">{{ $option }}</option>
+                        @endforeach
+                    </select>
+                </div>
+            @endif
+            <div class="flex items-end">
+                <button type="button" wire:click="resetFilters" class="text-sm font-medium text-muted-foreground hover:text-foreground">Réinitialiser les filtres</button>
+            </div>
+        </div>
+    @endif
 
     <div class="rounded-xl border border-border bg-card shadow-card overflow-x-auto">
         <table class="w-full text-sm">

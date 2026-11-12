@@ -67,6 +67,7 @@ new #[Layout('layouts.admin', ['title' => 'Résultats'])] class extends Componen
             'abstain' => $abstain,
             'tie' => count($winners) > 1,
             'winner' => count($winners) === 1 ? $winners[0] : null,
+            'membersByLabel' => $candidates->mapWithKeys(fn ($c) => [$c->label => $c->members ?? []]),
         ];
     }
 
@@ -127,6 +128,17 @@ new #[Layout('layouts.admin', ['title' => 'Résultats'])] class extends Componen
                     @endif
                 </div>
                 <p class="text-sm text-muted-foreground mb-4">{{ $r['expressed'] }} exprimé(s) · {{ $r['blank'] }} blanc(s) · {{ $r['abstain'] }} abstention(s)</p>
+
+                @if ($r['winner'] && ! empty($r['membersByLabel'][$r['winner']]))
+                    <div class="mb-4 rounded-lg bg-success-soft p-3 text-sm">
+                        <p class="font-semibold text-success mb-1">Liste élue — {{ $r['winner'] }}</p>
+                        <ul class="space-y-0.5 text-muted-foreground">
+                            @foreach ($r['membersByLabel'][$r['winner']] as $member)
+                                <li>{{ $member['role'] }} : {{ $member['name'] }}</li>
+                            @endforeach
+                        </ul>
+                    </div>
+                @endif
 
                 @php $max = $r['counts'] ? max($r['counts']) : 0; @endphp
                 <div class="space-y-3">

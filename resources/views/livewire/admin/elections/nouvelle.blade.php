@@ -6,9 +6,12 @@ use App\Models\Form as CensusForm;
 use App\Services\ElectionVoterService;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
+use Livewire\WithFileUploads;
 
 new #[Layout('layouts.admin', ['title' => 'Nouvelle élection'])] class extends Component
 {
+    use WithFileUploads;
+
     public int $step = 1;
 
     // Étape 1
@@ -18,7 +21,9 @@ new #[Layout('layouts.admin', ['title' => 'Nouvelle élection'])] class extends 
 
     // Étape 2
     public array $ballots = [
-        ['title' => '', 'type' => 'single_choice', 'max_choices' => null, 'allow_blank' => true, 'allow_abstention' => false, 'candidates' => ['']],
+        ['title' => '', 'type' => 'single_choice', 'max_choices' => null, 'allow_blank' => true, 'allow_abstention' => false, 'candidates' => [
+            ['label' => '', 'photo' => null, 'members' => []],
+        ]],
     ];
 
     // Étape 3
@@ -48,13 +53,24 @@ new #[Layout('layouts.admin', ['title' => 'Nouvelle élection'])] class extends 
 
     public function addCandidate(int $ballotIndex): void
     {
-        $this->ballots[$ballotIndex]['candidates'][] = '';
+        $this->ballots[$ballotIndex]['candidates'][] = ['label' => '', 'photo' => null, 'members' => []];
     }
 
     public function removeCandidate(int $ballotIndex, int $candidateIndex): void
     {
         unset($this->ballots[$ballotIndex]['candidates'][$candidateIndex]);
         $this->ballots[$ballotIndex]['candidates'] = array_values($this->ballots[$ballotIndex]['candidates']);
+    }
+
+    public function addMemberRow(int $ballotIndex, int $candidateIndex): void
+    {
+        $this->ballots[$ballotIndex]['candidates'][$candidateIndex]['members'][] = ['role' => '', 'name' => ''];
+    }
+
+    public function removeMemberRow(int $ballotIndex, int $candidateIndex, int $memberIndex): void
+    {
+        unset($this->ballots[$ballotIndex]['candidates'][$candidateIndex]['members'][$memberIndex]);
+        $this->ballots[$ballotIndex]['candidates'][$candidateIndex]['members'] = array_values($this->ballots[$ballotIndex]['candidates'][$candidateIndex]['members']);
     }
 
     public function addSource(): void
@@ -114,11 +130,28 @@ new #[Layout('layouts.admin', ['title' => 'Nouvelle élection'])] class extends 
                 'order' => $index + 1,
             ]);
 
-            foreach ($ballot['candidates'] as $cIndex => $label) {
-                if (trim((string) $label) === '') {
+            foreach ($ballot['candidates'] as $cIndex => $candidate) {
+                $label = trim((string) ($candidate['label'] ?? ''));
+                if ($label === '') {
                     continue;
                 }
-                $created->candidates()->create(['label' => $label, 'order' => $cIndex + 1]);
+
+                $photoPath = null;
+                if (! empty($candidate['photo'])) {
+                    $photoPath = $candidate['photo']->store('candidates', 'public');
+                }
+
+                $members = collect($candidate['members'] ?? [])
+                    ->filter(fn ($m) => trim($m['role'] ?? '') !== '' || trim($m['name'] ?? '') !== '')
+                    ->values()
+                    ->all();
+
+                $created->candidates()->create([
+                    'label' => $label,
+                    'photo_path' => $photoPath,
+                    'members' => $members ?: null,
+                    'order' => $cIndex + 1,
+                ]);
             }
         }
 
@@ -198,18 +231,31 @@ new #[Layout('layouts.admin', ['title' => 'Nouvelle élection'])] class extends 
                             <label class="flex items-center gap-2"><input type="checkbox" wire:model="ballots.{{ $bIndex }}.allow_abstention" class="rounded border-border"> Autoriser l'abstention</label>
                         </div>
                         @if ($ballot['type'] !== 'yesno')
-                            <p class="text-xs font-medium text-muted-foreground mb-2">Candidats / options</p>
-                            <div class="space-y-2">
+                            <p class="text-xs font-medium text-muted-foreground mb-2">Listes / candidats — chaque entrée est une liste complète (président(e) + membres du bureau) votée en bloc</p>
+                            <div class="space-y-3">
                                 @foreach ($ballot['candidates'] as $cIndex => $candidate)
-                                    <div class="flex gap-2">
-                                        <input type="text" wire:model="ballots.{{ $bIndex }}.candidates.{{ $cIndex }}" placeholder="Nom du candidat" class="flex-1 rounded-lg border-border text-sm">
-                                        @if (count($ballot['candidates']) > 1)
-                                            <button type="button" wire:click="removeCandidate({{ $bIndex }}, {{ $cIndex }})" class="text-destructive"><x-icon name="x" class="size-4" /></button>
-                                        @endif
+                                    <div class="rounded-lg border border-border p-3">
+                                        <div class="flex gap-2 mb-2">
+                                            <input type="text" wire:model="ballots.{{ $bIndex }}.candidates.{{ $cIndex }}.label" placeholder="Nom du/de la président(e) ou de la liste" class="flex-1 rounded-lg border-border text-sm">
+                                            <input type="file" accept="image/*" wire:model="ballots.{{ $bIndex }}.candidates.{{ $cIndex }}.photo" class="text-xs w-40">
+                                            @if (count($ballot['candidates']) > 1)
+                                                <button type="button" wire:click="removeCandidate({{ $bIndex }}, {{ $cIndex }})" class="text-destructive"><x-icon name="x" class="size-4" /></button>
+                                            @endif
+                                        </div>
+                                        <div class="space-y-1.5">
+                                            @foreach ($candidate['members'] ?? [] as $mIndex => $member)
+                                                <div class="flex gap-2">
+                                                    <input type="text" wire:model="ballots.{{ $bIndex }}.candidates.{{ $cIndex }}.members.{{ $mIndex }}.role" placeholder="Poste (ex: Secrétaire Général)" class="flex-1 rounded-lg border-border text-sm">
+                                                    <input type="text" wire:model="ballots.{{ $bIndex }}.candidates.{{ $cIndex }}.members.{{ $mIndex }}.name" placeholder="Nom" class="flex-1 rounded-lg border-border text-sm">
+                                                    <button type="button" wire:click="removeMemberRow({{ $bIndex }}, {{ $cIndex }}, {{ $mIndex }})" class="text-destructive"><x-icon name="x" class="size-4" /></button>
+                                                </div>
+                                            @endforeach
+                                            <button type="button" wire:click="addMemberRow({{ $bIndex }}, {{ $cIndex }})" class="text-xs font-semibold text-primary hover:underline">+ Ajouter un membre de la liste</button>
+                                        </div>
                                     </div>
                                 @endforeach
                             </div>
-                            <button type="button" wire:click="addCandidate({{ $bIndex }})" class="mt-2 text-xs font-semibold text-primary">+ Ajouter un candidat</button>
+                            <button type="button" wire:click="addCandidate({{ $bIndex }})" class="mt-2 text-xs font-semibold text-primary">+ Ajouter une liste</button>
                         @endif
                     </div>
                 @endforeach

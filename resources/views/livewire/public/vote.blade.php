@@ -35,7 +35,7 @@ new #[Layout('layouts.public')] class extends Component
 
         $this->voter = $voter;
 
-        foreach ($voter->election->ballots as $ballot) {
+        foreach ($this->ballots() as $ballot) {
             $this->choices[$ballot->id] = in_array($ballot->type, ['multiple_choice', 'ranked'], true) ? [] : '';
         }
     }
@@ -45,9 +45,11 @@ new #[Layout('layouts.public')] class extends Component
         $this->started = true;
     }
 
-    protected function ballots()
+    public function ballots()
     {
-        return $this->voter->election->ballots;
+        $all = $this->voter->election->ballots;
+
+        return $this->voter->ballot_id ? $all->where('id', $this->voter->ballot_id)->values() : $all;
     }
 
     public function nextStep(): void
@@ -135,7 +137,7 @@ new #[Layout('layouts.public')] class extends Component
             <p class="text-sm text-muted-foreground mb-4">{{ $voter->election->description }}</p>
             <div class="rounded-lg bg-muted/60 p-4 text-left text-sm space-y-1 mb-6">
                 <p>Bonjour <strong>{{ $voter->name }}</strong>, votre participation a été vérifiée.</p>
-                <p class="text-muted-foreground">Vous allez voter pour {{ $voter->election->ballots->count() }} urne(s). Votre vote est anonyme et ne peut être modifié après envoi.</p>
+                <p class="text-muted-foreground">Vous allez voter pour {{ $this->ballots()->count() }} urne(s). Votre vote est anonyme et ne peut être modifié après envoi.</p>
             </div>
             <button type="button" wire:click="begin" class="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-white hover:bg-primary-deep">Continuer</button>
         </div>
@@ -143,7 +145,7 @@ new #[Layout('layouts.public')] class extends Component
         <div class="rounded-2xl border border-border bg-card shadow-card p-6">
             @if (! $reviewing)
                 <div class="flex items-center gap-1.5 mb-6">
-                    @foreach ($voter->election->ballots as $i => $b)
+                    @foreach ($this->ballots() as $i => $b)
                         <span class="h-1.5 flex-1 rounded-full {{ $i <= $step ? 'bg-primary' : 'bg-muted' }}"></span>
                     @endforeach
                 </div>
@@ -180,6 +182,13 @@ new #[Layout('layouts.public')] class extends Component
                                 <span>
                                     <span class="block font-medium">{{ $candidate->label }}</span>
                                     @if ($candidate->description)<span class="block text-xs text-muted-foreground">{{ $candidate->description }}</span>@endif
+                                    @if (! empty($candidate->members))
+                                        <span class="mt-1 block space-y-0.5 text-xs text-muted-foreground">
+                                            @foreach ($candidate->members as $member)
+                                                <span class="block">{{ $member['role'] }} : {{ $member['name'] }}</span>
+                                            @endforeach
+                                        </span>
+                                    @endif
                                 </span>
                             </label>
                         @endforeach
@@ -200,7 +209,7 @@ new #[Layout('layouts.public')] class extends Component
                 <p class="text-xs text-muted-foreground mb-4">Votre vote ne pourra plus être modifié après confirmation.</p>
 
                 <div class="space-y-3 mb-6">
-                    @foreach ($voter->election->ballots as $i => $ballot)
+                    @foreach ($this->ballots() as $i => $ballot)
                         @php $choice = $choices[$ballot->id]; @endphp
                         <div class="rounded-lg border border-border p-3 text-sm">
                             <p class="font-medium">{{ $ballot->title }}</p>
