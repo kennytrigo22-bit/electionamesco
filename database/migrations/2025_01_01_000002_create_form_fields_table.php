@@ -12,7 +12,10 @@ return new class extends Migration
             $table->id();
             $table->foreignId('form_id')->constrained('forms')->cascadeOnDelete();
             $table->string('label');
-            $table->enum('type', ['text', 'email', 'tel', 'number', 'date', 'select', 'radio', 'checkbox', 'textarea', 'file']);
+            $table->enum('type', [
+                'text', 'email', 'tel', 'number', 'date', 'select', 'radio', 'checkbox', 'textarea', 'file',
+                'image', 'address', 'country', 'institution', 'level', 'custom',
+            ]);
             $table->json('options')->nullable();
             $table->boolean('is_required')->default(false);
             $table->boolean('is_identity_name')->default(false);

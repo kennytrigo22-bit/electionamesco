@@ -12,9 +12,7 @@ class SendVoteLinkEmail implements ShouldQueue
 {
     use Queueable;
 
-    public function __construct(public ElectionVoter $voter)
-    {
-    }
+    public function __construct(public ElectionVoter $voter) {}
 
     public function handle(): void
     {

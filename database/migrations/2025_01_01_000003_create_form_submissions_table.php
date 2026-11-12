@@ -11,7 +11,8 @@ return new class extends Migration
         Schema::create('form_submissions', function (Blueprint $table) {
             $table->id();
             $table->foreignId('form_id')->constrained('forms')->cascadeOnDelete();
-            $table->enum('status', ['pending', 'validated', 'rejected'])->default('pending');
+            $table->enum('status', ['pending', 'validated', 'rejected', 'suspended'])->default('pending');
+            $table->enum('eligibility', ['eligible', 'non_eligible', 'verification'])->nullable();
             $table->timestamp('submitted_at');
             $table->string('ip_address', 45)->nullable();
             $table->foreignId('validated_by')->nullable()->constrained('users');

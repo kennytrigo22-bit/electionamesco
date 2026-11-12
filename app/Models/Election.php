@@ -10,12 +10,21 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 #[Fillable(['title', 'description', 'status', 'opens_at', 'closes_at', 'created_by'])]
 class Election extends Model
 {
+    public const STATUS_LABELS = [
+        'draft' => 'Brouillon', 'scheduled' => 'Programmée', 'open' => 'Ouverte', 'closed' => 'Clôturée',
+    ];
+
     protected function casts(): array
     {
         return [
             'opens_at' => 'datetime',
             'closes_at' => 'datetime',
         ];
+    }
+
+    public function statusLabel(): string
+    {
+        return self::STATUS_LABELS[$this->status] ?? $this->status;
     }
 
     public function creator(): BelongsTo
@@ -36,6 +45,11 @@ class Election extends Model
     public function voters(): HasMany
     {
         return $this->hasMany(ElectionVoter::class);
+    }
+
+    public function candidacies(): HasMany
+    {
+        return $this->hasMany(Candidacy::class);
     }
 
     public function isOpen(): bool

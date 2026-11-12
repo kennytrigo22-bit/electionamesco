@@ -42,6 +42,14 @@ class VoteService
 
     public function validateChoice(Ballot $ballot, mixed $choiceData): bool
     {
+        if ($choiceData === 'blank' && $ballot->allow_blank) {
+            return true;
+        }
+
+        if ($choiceData === 'abstain' && $ballot->allow_abstention) {
+            return true;
+        }
+
         $candidateIds = $ballot->candidates->pluck('id')->all();
 
         return match ($ballot->type) {

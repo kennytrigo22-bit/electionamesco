@@ -1,11 +1,12 @@
 <?php
 
 use App\Models\Ballot;
+use App\Models\Candidate;
 use App\Models\Election;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 
-new #[Layout('layouts.app')] class extends Component
+new #[Layout('layouts.admin', ['title' => 'Urnes de l\'élection'])] class extends Component
 {
     public Election $election;
 
@@ -15,14 +16,6 @@ new #[Layout('layouts.app')] class extends Component
 
     public ?int $newBallotMaxChoices = null;
 
-    public array $types = [
-        'single_choice' => 'Choix unique',
-        'multiple_choice' => 'Choix multiple',
-        'ranked' => 'Classement (ranked choice)',
-        'yesno' => 'Oui / Non',
-    ];
-
-    // candidat en cours d'ajout, par urne
     public array $newCandidateLabel = [];
 
     public function mount(Election $election): void
@@ -34,8 +27,7 @@ new #[Layout('layouts.app')] class extends Component
     {
         $this->validate([
             'newBallotTitle' => ['required', 'string', 'max:255'],
-            'newBallotType' => ['required', 'in:'.implode(',', array_keys($this->types))],
-            'newBallotMaxChoices' => ['nullable', 'integer', 'min:1'],
+            'newBallotType' => ['required', 'in:single_choice,multiple_choice,ranked,yesno'],
         ]);
 
         $this->election->ballots()->create([
@@ -58,24 +50,17 @@ new #[Layout('layouts.app')] class extends Component
     public function addCandidate(Ballot $ballot): void
     {
         abort_unless($ballot->election_id === $this->election->id, 403);
-
         $label = trim($this->newCandidateLabel[$ballot->id] ?? '');
-
         if ($label === '') {
             return;
         }
-
-        $ballot->candidates()->create([
-            'label' => $label,
-            'order' => $ballot->candidates()->max('order') + 1,
-        ]);
-
+        $ballot->candidates()->create(['label' => $label, 'order' => $ballot->candidates()->max('order') + 1]);
         $this->newCandidateLabel[$ballot->id] = '';
     }
 
     public function removeCandidate(int $candidateId): void
     {
-        $candidate = \App\Models\Candidate::findOrFail($candidateId);
+        $candidate = Candidate::findOrFail($candidateId);
         abort_unless($candidate->ballot->election_id === $this->election->id, 403);
         $candidate->delete();
     }
@@ -87,82 +72,74 @@ new #[Layout('layouts.app')] class extends Component
 
     public function with(): array
     {
-        return [
-            'ballots' => $this->election->ballots()->with('candidates')->get(),
-        ];
+        return ['ballots' => $this->election->ballots()->with('candidates')->get()];
     }
 }; ?>
 
 <div>
-    <div class="max-w-4xl mx-auto py-10 sm:px-6 lg:px-8 space-y-8">
-        <div class="flex items-center justify-between">
-            <div>
-                <h1 class="text-xl font-semibold">{{ $election->title }}</h1>
-                <p class="text-sm text-gray-500">{{ $election->description }}</p>
-            </div>
-            <select wire:change="updateStatus($event.target.value)" class="border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 rounded-md shadow-sm">
-                @foreach (['draft' => 'Brouillon', 'scheduled' => 'Programmée', 'open' => 'Ouverte', 'closed' => 'Clôturée'] as $value => $label)
+    <x-page-header :title="$election->title" :description="$election->description">
+        <x-slot:actions>
+            <select wire:change="updateStatus($event.target.value)" class="rounded-lg border-border text-sm">
+                @foreach (\App\Models\Election::STATUS_LABELS as $value => $label)
                     <option value="{{ $value }}" @selected($election->status === $value)>{{ $label }}</option>
                 @endforeach
             </select>
-        </div>
+            <a href="{{ route('admin.votes.invitations', $election) }}" wire:navigate class="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-semibold hover:bg-muted">Invitations</a>
+        </x-slot:actions>
+    </x-page-header>
 
+    <div class="space-y-5">
         @foreach ($ballots as $ballot)
-            <div class="bg-white dark:bg-gray-800 shadow sm:rounded-lg p-6">
+            <div class="rounded-xl border border-border bg-card p-5 shadow-card">
                 <div class="flex items-center justify-between mb-4">
                     <div>
-                        <h2 class="text-lg font-semibold">{{ $ballot->title }}</h2>
-                        <p class="text-sm text-gray-500">{{ $types[$ballot->type] }}@if($ballot->max_choices) — max {{ $ballot->max_choices }} choix @endif</p>
+                        <h2 class="font-semibold">{{ $ballot->title }}</h2>
+                        <p class="text-xs text-muted-foreground">{{ \App\Models\Ballot::TYPE_LABELS[$ballot->type] }}@if($ballot->max_choices) — max {{ $ballot->max_choices }} choix @endif</p>
                     </div>
-                    <x-danger-button wire:click="removeBallot({{ $ballot->id }})" wire:confirm="Supprimer cette urne et ses candidats ?">Supprimer l'urne</x-danger-button>
+                    <button type="button" wire:click="removeBallot({{ $ballot->id }})" wire:confirm="Supprimer cette urne et ses candidats ?" class="rounded-lg bg-destructive-soft px-3 py-1.5 text-xs font-semibold text-destructive hover:brightness-95">Supprimer l'urne</button>
                 </div>
 
-                <div class="space-y-2 mb-4">
+                <div class="space-y-2 mb-3">
                     @foreach ($ballot->candidates as $candidate)
-                        <div class="flex items-center justify-between border rounded-md p-2 dark:border-gray-700">
-                            <span>{{ $candidate->label }}</span>
-                            <button type="button" wire:click="removeCandidate({{ $candidate->id }})" class="text-sm text-red-600 hover:underline">Retirer</button>
+                        <div class="flex items-center justify-between rounded-lg border border-border p-2 text-sm">
+                            <span class="flex items-center gap-2">
+                                @if ($candidate->photo_path)
+                                    <img src="{{ \Illuminate\Support\Facades\Storage::url($candidate->photo_path) }}" class="size-7 rounded-full object-cover">
+                                @else
+                                    <x-person-avatar :name="$candidate->label" class="size-7" />
+                                @endif
+                                {{ $candidate->label }}
+                            </span>
+                            <button type="button" wire:click="removeCandidate({{ $candidate->id }})" class="text-xs text-destructive hover:underline">Retirer</button>
                         </div>
                     @endforeach
                 </div>
 
                 <form wire:submit="addCandidate({{ $ballot->id }})" class="flex gap-2">
-                    <x-text-input wire:model="newCandidateLabel.{{ $ballot->id }}" placeholder="Nom du candidat / liste / option" class="flex-1" />
-                    <x-secondary-button type="submit">Ajouter</x-secondary-button>
+                    <input type="text" wire:model="newCandidateLabel.{{ $ballot->id }}" placeholder="Nom du candidat / liste / option" class="flex-1 rounded-lg border-border text-sm">
+                    <button type="submit" class="rounded-lg border border-border px-3 py-1.5 text-sm font-semibold hover:bg-muted">Ajouter</button>
                 </form>
             </div>
         @endforeach
 
-        <div class="bg-white dark:bg-gray-800 shadow sm:rounded-lg p-6">
-            <h2 class="text-lg font-semibold mb-4">Ajouter une urne (poste à élire)</h2>
+        <div class="rounded-xl border border-border bg-card p-5 shadow-card">
+            <h2 class="text-sm font-semibold mb-4">Ajouter une urne</h2>
             <form wire:submit="addBallot" class="space-y-4">
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                        <x-input-label value="Titre de l'urne" />
-                        <x-text-input wire:model="newBallotTitle" class="block w-full mt-1" placeholder="Ex: Président CEI" />
-                        <x-input-error :messages="$errors->get('newBallotTitle')" class="mt-2" />
-                    </div>
-                    <div>
-                        <x-input-label value="Type de scrutin" />
-                        <select wire:model.live="newBallotType" class="block w-full mt-1 border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 rounded-md shadow-sm">
-                            @foreach ($types as $value => $label)
-                                <option value="{{ $value }}">{{ $label }}</option>
-                            @endforeach
-                        </select>
-                    </div>
+                    <input type="text" wire:model="newBallotTitle" placeholder="Ex: Président CEI" class="rounded-lg border-border text-sm">
+                    <select wire:model.live="newBallotType" class="rounded-lg border-border text-sm">
+                        @foreach (\App\Models\Ballot::TYPE_LABELS as $value => $label)
+                            <option value="{{ $value }}">{{ $label }}</option>
+                        @endforeach
+                    </select>
                 </div>
-
                 @if ($newBallotType === 'multiple_choice')
-                    <div>
-                        <x-input-label value="Nombre maximum de choix" />
-                        <x-text-input type="number" min="1" wire:model="newBallotMaxChoices" class="block w-full mt-1" />
-                    </div>
+                    <input type="number" min="1" wire:model="newBallotMaxChoices" placeholder="Nombre maximum de choix" class="rounded-lg border-border text-sm w-full sm:w-64">
                 @endif
-
-                <x-primary-button type="submit">Ajouter l'urne</x-primary-button>
+                <button type="submit" class="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-deep"><x-icon name="plus" class="size-4" /> Ajouter l'urne</button>
             </form>
         </div>
 
-        <a href="{{ route('admin.elections.index') }}" wire:navigate class="text-sm text-indigo-600 hover:underline">&larr; Retour aux élections</a>
+        <a href="{{ route('admin.elections.index') }}" wire:navigate class="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"><x-icon name="arrow-left" class="size-4" /> Retour aux élections</a>
     </div>
 </div>

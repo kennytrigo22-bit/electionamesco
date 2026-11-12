@@ -7,7 +7,10 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['title', 'description', 'slug', 'status', 'opens_at', 'closes_at', 'created_by'])]
+#[Fillable([
+    'title', 'description', 'slug', 'status', 'opens_at', 'closes_at', 'created_by',
+    'max_responses', 'allow_multiple_submissions', 'auto_validate', 'confirmation_message',
+])]
 class Form extends Model
 {
     protected function casts(): array
@@ -15,6 +18,8 @@ class Form extends Model
         return [
             'opens_at' => 'datetime',
             'closes_at' => 'datetime',
+            'allow_multiple_submissions' => 'boolean',
+            'auto_validate' => 'boolean',
         ];
     }
 
@@ -35,6 +40,14 @@ class Form extends Model
 
     public function isOpen(): bool
     {
-        return $this->status === 'open';
+        if ($this->status !== 'open') {
+            return false;
+        }
+
+        if ($this->max_responses && $this->submissions()->count() >= $this->max_responses) {
+            return false;
+        }
+
+        return true;
     }
 }

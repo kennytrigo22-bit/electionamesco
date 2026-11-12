@@ -5,7 +5,7 @@ use App\Models\FormField;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 
-new #[Layout('layouts.app')] class extends Component
+new #[Layout('layouts.admin', ['title' => 'Constructeur de formulaire'])] class extends Component
 {
     public Form $form;
 
@@ -19,19 +19,6 @@ new #[Layout('layouts.app')] class extends Component
 
     public bool $newIsIdentityName = false;
 
-    public array $types = [
-        'text' => 'Texte court',
-        'textarea' => 'Texte long',
-        'email' => 'Email',
-        'tel' => 'Téléphone',
-        'number' => 'Nombre',
-        'date' => 'Date',
-        'select' => 'Liste déroulante',
-        'radio' => 'Choix unique',
-        'checkbox' => 'Cases à cocher',
-        'file' => 'Fichier',
-    ];
-
     public function mount(Form $form): void
     {
         $this->form = $form;
@@ -41,11 +28,11 @@ new #[Layout('layouts.app')] class extends Component
     {
         $this->validate([
             'newLabel' => ['required', 'string', 'max:255'],
-            'newType' => ['required', 'in:'.implode(',', array_keys($this->types))],
+            'newType' => ['required', 'in:'.implode(',', array_keys(FormField::TYPE_LABELS))],
         ]);
 
         $options = null;
-        if (in_array($this->newType, FormField::TYPES_WITH_OPTIONS, true)) {
+        if (in_array($this->newType, ['select', 'radio', 'checkbox'], true)) {
             $options = array_values(array_filter(array_map('trim', explode("\n", $this->newOptions))));
         }
 
@@ -58,33 +45,30 @@ new #[Layout('layouts.app')] class extends Component
             'order' => $this->form->fields()->max('order') + 1,
         ]);
 
-        $this->reset(['newLabel', 'newType', 'newOptions', 'newRequired', 'newIsIdentityName']);
+        $this->reset(['newLabel', 'newOptions', 'newIsIdentityName']);
         $this->newType = 'text';
         $this->newRequired = true;
     }
 
     public function removeField(FormField $field): void
     {
+        abort_unless($field->form_id === $this->form->id, 403);
         $field->delete();
     }
 
-    public function moveUp(FormField $field): void
+    public function duplicateField(FormField $field): void
     {
-        $previous = $this->form->fields()->where('order', '<', $field->order)->orderByDesc('order')->first();
-        if ($previous) {
-            [$field->order, $previous->order] = [$previous->order, $field->order];
-            $field->save();
-            $previous->save();
-        }
+        abort_unless($field->form_id === $this->form->id, 403);
+        $copy = $field->replicate();
+        $copy->label = $field->label.' (copie)';
+        $copy->order = $this->form->fields()->max('order') + 1;
+        $copy->save();
     }
 
-    public function moveDown(FormField $field): void
+    public function reorder(array $orderedIds): void
     {
-        $next = $this->form->fields()->where('order', '>', $field->order)->orderBy('order')->first();
-        if ($next) {
-            [$field->order, $next->order] = [$next->order, $field->order];
-            $field->save();
-            $next->save();
+        foreach ($orderedIds as $index => $id) {
+            FormField::where('id', $id)->where('form_id', $this->form->id)->update(['order' => $index + 1]);
         }
     }
 
@@ -92,84 +76,99 @@ new #[Layout('layouts.app')] class extends Component
     {
         return [
             'fields' => $this->form->fields,
+            'types' => FormField::TYPE_LABELS,
         ];
     }
 }; ?>
 
 <div>
-    <div class="max-w-4xl mx-auto py-10 sm:px-6 lg:px-8 space-y-8">
-        <div>
-            <h1 class="text-xl font-semibold">{{ $form->title }}</h1>
-            <p class="text-sm text-gray-500">{{ $form->description }}</p>
-        </div>
+    <x-page-header :title="$form->title" :description="$form->description">
+        <x-slot:actions>
+            <a href="{{ route('admin.forms.index') }}" wire:navigate class="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"><x-icon name="arrow-left" class="size-4" /> Retour</a>
+        </x-slot:actions>
+    </x-page-header>
 
-        <div class="bg-white dark:bg-gray-800 shadow sm:rounded-lg p-6">
-            <h2 class="text-lg font-semibold mb-4">Champs du formulaire</h2>
+    <div class="rounded-xl border border-border bg-card p-5 shadow-card">
+        <h2 class="text-sm font-semibold mb-4">Champs du formulaire</h2>
 
-            <div class="space-y-3 mb-6">
-                @forelse ($fields as $field)
-                    <div class="flex items-center justify-between border rounded-md p-3 dark:border-gray-700">
-                        <div>
-                            <p class="font-medium">
+        <div class="space-y-2 mb-6" x-data="{
+                drag: null,
+                onDrop(id) {
+                    if (this.drag === null || this.drag === id) return;
+                    let items = Array.from($el.querySelectorAll('[data-field-id]')).map(el => el.dataset.fieldId);
+                    $wire.reorder(items);
+                }
+            }">
+            @forelse ($fields as $field)
+                <div data-field-id="{{ $field->id }}" draggable="true"
+                     @dragstart="drag = {{ $field->id }}"
+                     @dragover.prevent
+                     @drop="onDrop({{ $field->id }})"
+                     class="flex items-center justify-between gap-3 rounded-lg border border-border p-3 bg-surface cursor-move">
+                    <div class="flex items-center gap-3 min-w-0">
+                        <span class="text-muted-foreground">⠿</span>
+                        <div class="min-w-0">
+                            <p class="font-medium truncate">
                                 {{ $field->label }}
-                                @if ($field->is_required)<span class="text-red-500">*</span>@endif
-                                @if ($field->is_identity_name)<span class="ml-2 text-xs bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded">Nom identifiant</span>@endif
+                                @if ($field->is_required)<span class="text-destructive">*</span>@endif
+                                @if ($field->is_identity_name)<x-status-badge tone="primary" class="ml-2">Nom identifiant</x-status-badge>@endif
                             </p>
-                            <p class="text-sm text-gray-500">
+                            <p class="text-xs text-muted-foreground">
                                 {{ $types[$field->type] }}
-                                @if ($field->hasOptions()) — {{ implode(', ', $field->options ?? []) }} @endif
+                                @if ($field->hasOptions()) — {{ implode(', ', $field->effectiveOptions()) }} @endif
                             </p>
-                        </div>
-                        <div class="flex items-center gap-2">
-                            <button type="button" wire:click="moveUp({{ $field->id }})" class="text-gray-400 hover:text-gray-700">&uarr;</button>
-                            <button type="button" wire:click="moveDown({{ $field->id }})" class="text-gray-400 hover:text-gray-700">&darr;</button>
-                            <x-danger-button wire:click="removeField({{ $field->id }})" wire:confirm="Supprimer ce champ ?">Supprimer</x-danger-button>
                         </div>
                     </div>
-                @empty
-                    <p class="text-sm text-gray-500">Aucun champ pour le moment. Ajoutez le premier champ ci-dessous.</p>
-                @endforelse
+                    <div class="flex items-center gap-1 shrink-0">
+                        <button type="button" wire:click="duplicateField({{ $field->id }})" class="rounded-lg p-2 text-muted-foreground hover:bg-muted" title="Dupliquer"><x-icon name="file-text" class="size-4" /></button>
+                        <button type="button" wire:click="removeField({{ $field->id }})" wire:confirm="Supprimer ce champ ?" class="rounded-lg p-2 text-destructive hover:bg-destructive-soft" title="Supprimer"><x-icon name="trash" class="size-4" /></button>
+                    </div>
+                </div>
+            @empty
+                <x-empty-state icon="clipboard" title="Aucun champ" description="Ajoutez le premier champ ci-dessous." />
+            @endforelse
+        </div>
+
+        <form wire:submit="addField" class="space-y-4 border-t border-border pt-6">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                    <label class="text-xs font-medium text-muted-foreground">Libellé du champ</label>
+                    <input type="text" wire:model="newLabel" class="mt-1 block w-full rounded-lg border-border text-sm" placeholder="Ex: Nom complet">
+                    @error('newLabel') <p class="mt-1 text-xs text-destructive">{{ $message }}</p> @enderror
+                </div>
+                <div>
+                    <label class="text-xs font-medium text-muted-foreground">Type de champ</label>
+                    <select wire:model.live="newType" class="mt-1 block w-full rounded-lg border-border text-sm">
+                        @foreach ($types as $value => $label)
+                            <option value="{{ $value }}">{{ $label }}</option>
+                        @endforeach
+                    </select>
+                </div>
             </div>
 
-            <form wire:submit="addField" class="space-y-4 border-t pt-6 dark:border-gray-700">
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                        <x-input-label value="Libellé du champ" />
-                        <x-text-input wire:model="newLabel" class="block w-full mt-1" placeholder="Ex: Nom complet" />
-                        <x-input-error :messages="$errors->get('newLabel')" class="mt-2" />
-                    </div>
-                    <div>
-                        <x-input-label value="Type de champ" />
-                        <select wire:model.live="newType" class="block w-full mt-1 border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 rounded-md shadow-sm">
-                            @foreach ($types as $value => $label)
-                                <option value="{{ $value }}">{{ $label }}</option>
-                            @endforeach
-                        </select>
-                    </div>
+            @if (in_array($newType, ['select', 'radio', 'checkbox'], true))
+                <div>
+                    <label class="text-xs font-medium text-muted-foreground">Options (une par ligne)</label>
+                    <textarea wire:model="newOptions" rows="3" class="mt-1 block w-full rounded-lg border-border text-sm"></textarea>
                 </div>
+            @endif
 
-                @if (in_array($newType, \App\Models\FormField::TYPES_WITH_OPTIONS, true))
-                    <div>
-                        <x-input-label value="Options (une par ligne)" />
-                        <textarea wire:model="newOptions" rows="3" class="block w-full mt-1 border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 rounded-md shadow-sm"></textarea>
-                    </div>
-                @endif
+            @if (in_array($newType, ['country', 'institution', 'level'], true))
+                <p class="text-xs text-muted-foreground">Ce type propose automatiquement une liste d'options prédéfinie.</p>
+            @endif
 
-                <div class="flex items-center gap-6">
-                    <label class="flex items-center gap-2 text-sm">
-                        <input type="checkbox" wire:model="newRequired" class="rounded border-gray-300">
-                        Champ obligatoire
-                    </label>
-                    <label class="flex items-center gap-2 text-sm">
-                        <input type="checkbox" wire:model="newIsIdentityName">
-                        Utiliser comme nom de l'électeur
-                    </label>
-                </div>
+            @if ($newType === 'image')
+                <p class="text-xs text-muted-foreground">Les administrateurs verront un aperçu visuel du fichier téléversé.</p>
+            @endif
 
-                <x-primary-button type="submit">Ajouter le champ</x-primary-button>
-            </form>
-        </div>
+            <div class="flex items-center gap-6">
+                <label class="flex items-center gap-2 text-sm"><input type="checkbox" wire:model="newRequired" class="rounded border-border"> Champ obligatoire</label>
+                <label class="flex items-center gap-2 text-sm"><input type="checkbox" wire:model="newIsIdentityName" class="rounded border-border"> Utiliser comme nom de l'électeur</label>
+            </div>
 
-        <a href="{{ route('admin.forms.index') }}" wire:navigate class="text-sm text-indigo-600 hover:underline">&larr; Retour aux formulaires</a>
+            <button type="submit" class="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-deep">
+                <x-icon name="plus" class="size-4" /> Ajouter le champ
+            </button>
+        </form>
     </div>
 </div>

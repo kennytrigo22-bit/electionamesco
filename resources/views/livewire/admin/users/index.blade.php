@@ -5,8 +5,10 @@ use Illuminate\Support\Facades\Hash;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 
-new #[Layout('layouts.app')] class extends Component
+new #[Layout('layouts.admin', ['title' => 'Utilisateurs et rôles'])] class extends Component
 {
+    public bool $showCreate = false;
+
     public string $name = '';
 
     public string $email = '';
@@ -18,12 +20,14 @@ new #[Layout('layouts.app')] class extends Component
     public ?string $fonction = null;
 
     public array $fonctions = [
-        'PR_CEI' => 'Président CEI',
-        'VP_CEI' => 'Vice-Président CEI',
-        'R_CEI' => 'Rapporteur CEI',
-        'PR_BE' => 'Président Bureau Exécutif',
-        'S_BE' => 'Secrétaire Bureau Exécutif',
-        'M_BE' => 'Membre Bureau Exécutif',
+        'PR_CEI' => 'Président CEI', 'VP_CEI' => 'Vice-Président CEI', 'R_CEI' => 'Rapporteur CEI',
+        'PR_BE' => 'Président Bureau Exécutif', 'S_BE' => 'Secrétaire Bureau Exécutif', 'M_BE' => 'Membre Bureau Exécutif',
+    ];
+
+    public array $roleCards = [
+        ['key' => 'super_admin', 'title' => 'Super administrateur', 'description' => 'Accès complet, y compris la gestion des comptes et des paramètres système.'],
+        ['key' => 'cei', 'title' => 'Commission Électorale Indépendante', 'description' => 'Gère les élections, urnes, candidatures, invitations et résultats (PR_CEI, VP_CEI, R_CEI).'],
+        ['key' => 'be', 'title' => 'Bureau Exécutif', 'description' => 'Gère les formulaires, les inscriptions et le fichier électoral (PR_BE, S_BE, M_BE).'],
     ];
 
     public function create(): void
@@ -44,9 +48,8 @@ new #[Layout('layouts.app')] class extends Component
             'fonction' => $this->role === 'admin' ? $this->fonction : null,
         ]);
 
-        $this->reset(['name', 'email', 'password', 'fonction']);
+        $this->reset(['name', 'email', 'password', 'fonction', 'showCreate']);
         $this->role = 'admin';
-
         session()->flash('status', 'Administrateur créé.');
     }
 
@@ -58,47 +61,60 @@ new #[Layout('layouts.app')] class extends Component
 
     public function with(): array
     {
-        return [
-            'users' => User::latest()->get(),
-        ];
+        return ['users' => User::latest()->get()];
     }
 }; ?>
 
 <div>
-    <div class="max-w-4xl mx-auto py-10 sm:px-6 lg:px-8 space-y-8">
-        @if (session('status'))
-            <div class="bg-green-50 text-green-800 text-sm rounded-md p-3">{{ session('status') }}</div>
-        @endif
+    <x-page-header title="Utilisateurs et rôles" description="Gestion des comptes administrateurs de la plateforme.">
+        <x-slot:actions>
+            <button type="button" wire:click="$toggle('showCreate')" class="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-deep"><x-icon name="plus" class="size-4" /> Nouvel administrateur</button>
+        </x-slot:actions>
+    </x-page-header>
 
-        <div class="bg-white dark:bg-gray-800 shadow sm:rounded-lg p-6">
-            <h2 class="text-lg font-semibold mb-4">Nouvel administrateur</h2>
+    @if (session('status'))
+        <div class="mb-4 rounded-lg bg-success-soft text-success text-sm px-4 py-2">{{ session('status') }}</div>
+    @endif
+
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+        @foreach ($roleCards as $card)
+            <div class="rounded-xl border border-border bg-card p-4 shadow-card">
+                <p class="font-semibold text-sm">{{ $card['title'] }}</p>
+                <p class="mt-1 text-xs text-muted-foreground">{{ $card['description'] }}</p>
+            </div>
+        @endforeach
+    </div>
+
+    @if ($showCreate)
+        <div class="rounded-xl border border-border bg-card p-5 shadow-card mb-6">
+            <h2 class="text-sm font-semibold mb-4">Nouvel administrateur</h2>
             <form wire:submit="create" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                    <x-input-label value="Nom" />
-                    <x-text-input wire:model="name" class="block w-full mt-1" />
-                    <x-input-error :messages="$errors->get('name')" class="mt-2" />
+                    <label class="text-xs font-medium text-muted-foreground">Nom</label>
+                    <input type="text" wire:model="name" class="mt-1 block w-full rounded-lg border-border text-sm">
+                    @error('name') <p class="mt-1 text-xs text-destructive">{{ $message }}</p> @enderror
                 </div>
                 <div>
-                    <x-input-label value="Email" />
-                    <x-text-input type="email" wire:model="email" class="block w-full mt-1" />
-                    <x-input-error :messages="$errors->get('email')" class="mt-2" />
+                    <label class="text-xs font-medium text-muted-foreground">Email</label>
+                    <input type="email" wire:model="email" class="mt-1 block w-full rounded-lg border-border text-sm">
+                    @error('email') <p class="mt-1 text-xs text-destructive">{{ $message }}</p> @enderror
                 </div>
                 <div>
-                    <x-input-label value="Mot de passe" />
-                    <x-text-input type="password" wire:model="password" class="block w-full mt-1" />
-                    <x-input-error :messages="$errors->get('password')" class="mt-2" />
+                    <label class="text-xs font-medium text-muted-foreground">Mot de passe</label>
+                    <input type="password" wire:model="password" class="mt-1 block w-full rounded-lg border-border text-sm">
+                    @error('password') <p class="mt-1 text-xs text-destructive">{{ $message }}</p> @enderror
                 </div>
                 <div>
-                    <x-input-label value="Rôle" />
-                    <select wire:model.live="role" class="block w-full mt-1 border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 rounded-md shadow-sm">
+                    <label class="text-xs font-medium text-muted-foreground">Rôle</label>
+                    <select wire:model.live="role" class="mt-1 block w-full rounded-lg border-border text-sm">
                         <option value="admin">Admin</option>
                         <option value="super_admin">Super Admin</option>
                     </select>
                 </div>
                 @if ($role === 'admin')
                     <div class="sm:col-span-2">
-                        <x-input-label value="Fonction" />
-                        <select wire:model="fonction" class="block w-full mt-1 border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 rounded-md shadow-sm">
+                        <label class="text-xs font-medium text-muted-foreground">Fonction</label>
+                        <select wire:model="fonction" class="mt-1 block w-full rounded-lg border-border text-sm">
                             <option value="">—</option>
                             @foreach ($fonctions as $value => $label)
                                 <option value="{{ $value }}">{{ $label }}</option>
@@ -107,29 +123,26 @@ new #[Layout('layouts.app')] class extends Component
                     </div>
                 @endif
                 <div class="sm:col-span-2">
-                    <x-primary-button type="submit">Créer</x-primary-button>
+                    <button type="submit" class="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-deep">Créer</button>
                 </div>
             </form>
         </div>
+    @endif
 
-        <div class="bg-white dark:bg-gray-800 shadow sm:rounded-lg p-6">
-            <h2 class="text-lg font-semibold mb-4">Administrateurs</h2>
-            <div class="divide-y divide-gray-200 dark:divide-gray-700">
-                @foreach ($users as $user)
-                    <div class="py-3 flex items-center justify-between gap-4">
-                        <div>
-                            <p class="font-medium">{{ $user->name }} <span class="text-sm text-gray-500">({{ $user->email }})</span></p>
-                            <p class="text-sm text-gray-500">
-                                {{ $user->role === 'super_admin' ? 'Super Admin' : 'Admin' }}
-                                @if ($user->fonction) — {{ $fonctions[$user->fonction] ?? $user->fonction }} @endif
-                            </p>
-                        </div>
-                        @if ($user->id !== auth()->id())
-                            <x-danger-button wire:click="delete({{ $user->id }})" wire:confirm="Supprimer ce compte ?">Supprimer</x-danger-button>
-                        @endif
+    <div class="rounded-xl border border-border bg-card shadow-card divide-y divide-border">
+        @foreach ($users as $user)
+            <div class="p-4 flex items-center justify-between gap-4">
+                <div class="flex items-center gap-3">
+                    <x-person-avatar :name="$user->name" />
+                    <div>
+                        <p class="font-medium text-sm">{{ $user->name }} <span class="text-xs text-muted-foreground">({{ $user->email }})</span></p>
+                        <p class="text-xs text-muted-foreground">{{ $user->role === 'super_admin' ? 'Super Admin' : 'Admin' }} @if($user->fonction) · {{ $fonctions[$user->fonction] ?? $user->fonction }} @endif</p>
                     </div>
-                @endforeach
+                </div>
+                @if ($user->id !== auth()->id())
+                    <button type="button" wire:click="delete({{ $user->id }})" wire:confirm="Supprimer ce compte ?" class="rounded-lg bg-destructive-soft px-3 py-1.5 text-xs font-semibold text-destructive hover:brightness-95">Supprimer</button>
+                @endif
             </div>
-        </div>
+        @endforeach
     </div>
 </div>

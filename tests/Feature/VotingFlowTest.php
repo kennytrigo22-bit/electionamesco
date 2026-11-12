@@ -4,8 +4,8 @@ namespace Tests\Feature;
 
 use App\Models\Ballot;
 use App\Models\Election;
-use App\Models\ElectionVoter;
 use App\Models\User;
+use App\Models\Vote;
 use App\Services\VoteService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use RuntimeException;
@@ -52,7 +52,7 @@ class VotingFlowTest extends TestCase
         $service->castVotes($voter, [$ballot->id => (string) $candidateA->id]);
 
         $this->assertNotNull($voter->refresh()->used_at);
-        $this->assertSame(1, \App\Models\Vote::count());
+        $this->assertSame(1, Vote::count());
 
         $this->expectException(RuntimeException::class);
 

@@ -5,8 +5,10 @@ use Illuminate\Support\Str;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 
-new #[Layout('layouts.app')] class extends Component
+new #[Layout('layouts.admin', ['title' => 'Recensement'])] class extends Component
 {
+    public bool $showCreate = false;
+
     public string $title = '';
 
     public string $description = '';
@@ -28,85 +30,78 @@ new #[Layout('layouts.app')] class extends Component
             'created_by' => auth()->id(),
         ]);
 
+        \App\Models\ActivityLog::record('form.created', "Formulaire « {$form->title} » créé", $form);
+
         $this->redirect(route('admin.forms.builder', $form), navigate: true);
     }
 
     public function toggleStatus(Form $form): void
     {
-        $form->update([
-            'status' => $form->status === 'open' ? 'closed' : 'open',
-        ]);
+        $form->update(['status' => $form->status === 'open' ? 'closed' : 'open']);
     }
 
     public function statusLabel(string $status): string
     {
         return match ($status) {
-            'draft' => 'Publier',
-            'open' => 'Fermer',
-            'closed' => 'Rouvrir',
+            'draft' => 'Publier', 'open' => 'Fermer', 'closed' => 'Rouvrir',
         };
     }
 
     public function with(): array
     {
-        return [
-            'forms' => Form::withCount('submissions')->latest()->get(),
-        ];
+        return ['forms' => Form::withCount('submissions')->latest()->get()];
     }
 }; ?>
 
 <div>
-    <div class="max-w-5xl mx-auto py-10 sm:px-6 lg:px-8 space-y-8">
-        <div class="bg-white dark:bg-gray-800 shadow sm:rounded-lg p-6">
-            <h2 class="text-lg font-semibold mb-4">Nouveau formulaire d'inscription</h2>
+    <x-page-header title="Recensement" description="Créez des formulaires d'inscription dynamiques pour constituer le fichier électoral.">
+        <x-slot:actions>
+            <button type="button" wire:click="$toggle('showCreate')" class="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-deep">
+                <x-icon name="plus" class="size-4" /> Nouveau formulaire
+            </button>
+        </x-slot:actions>
+    </x-page-header>
+
+    @if ($showCreate)
+        <div class="mb-6 rounded-xl border border-border bg-card p-5 shadow-card">
+            <h2 class="text-sm font-semibold mb-3">Nouveau formulaire d'inscription</h2>
             <form wire:submit="create" class="space-y-4">
                 <div>
-                    <x-input-label for="title" value="Titre" />
-                    <x-text-input id="title" wire:model="title" class="block w-full mt-1" />
-                    <x-input-error :messages="$errors->get('title')" class="mt-2" />
+                    <label class="text-xs font-medium text-muted-foreground">Titre</label>
+                    <input type="text" wire:model="title" class="mt-1 block w-full rounded-lg border-border text-sm" placeholder="Ex: Recensement 2026 – 2027">
+                    @error('title') <p class="mt-1 text-xs text-destructive">{{ $message }}</p> @enderror
                 </div>
                 <div>
-                    <x-input-label for="description" value="Description" />
-                    <textarea id="description" wire:model="description" rows="2" class="block w-full mt-1 border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 rounded-md shadow-sm"></textarea>
+                    <label class="text-xs font-medium text-muted-foreground">Description</label>
+                    <textarea wire:model="description" rows="2" class="mt-1 block w-full rounded-lg border-border text-sm"></textarea>
                 </div>
-                <x-primary-button type="submit">Créer et configurer les champs</x-primary-button>
+                <button type="submit" class="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-deep">Créer et configurer les champs</button>
             </form>
         </div>
+    @endif
 
-        <div class="bg-white dark:bg-gray-800 shadow sm:rounded-lg p-6">
-            <h2 class="text-lg font-semibold mb-4">Formulaires existants</h2>
-            <div class="divide-y divide-gray-200 dark:divide-gray-700">
-                @forelse ($forms as $form)
-                    <div class="py-4 flex items-center justify-between gap-4">
-                        <div>
-                            <p class="font-medium">{{ $form->title }}</p>
-                            <p class="text-sm text-gray-500">
-                                {{ $form->submissions_count }} inscription(s) —
-                                <span class="inline-flex px-2 py-0.5 rounded text-xs
-                                    @class([
-                                        'bg-green-100 text-green-800' => $form->status === 'open',
-                                        'bg-gray-100 text-gray-800' => $form->status === 'draft',
-                                        'bg-red-100 text-red-800' => $form->status === 'closed',
-                                    ])">
-                                    {{ ['draft' => 'Brouillon', 'open' => 'Ouvert', 'closed' => 'Fermé'][$form->status] }}
-                                </span>
-                            </p>
-                        </div>
-                        <div class="flex items-center gap-2">
-                            @if ($form->status !== 'draft')
-                                <a href="{{ route('forms.show', $form) }}" target="_blank" class="text-sm text-indigo-600 hover:underline">Lien public</a>
-                            @endif
-                            <a href="{{ route('admin.forms.submissions', $form) }}" wire:navigate class="text-sm text-indigo-600 hover:underline">Inscriptions</a>
-                            <a href="{{ route('admin.forms.builder', $form) }}" wire:navigate class="text-sm text-indigo-600 hover:underline">Modifier</a>
-                            <x-secondary-button wire:click="toggleStatus({{ $form->id }})">
-                                {{ $this->statusLabel($form->status) }}
-                            </x-secondary-button>
-                        </div>
-                    </div>
-                @empty
-                    <p class="text-sm text-gray-500 py-4">Aucun formulaire pour le moment.</p>
-                @endforelse
+    <div class="rounded-xl border border-border bg-card shadow-card divide-y divide-border">
+        @forelse ($forms as $form)
+            <div class="p-4 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                    <p class="font-semibold">{{ $form->title }}</p>
+                    <p class="text-sm text-muted-foreground">{{ $form->submissions_count }} inscription(s)</p>
+                </div>
+                <div class="flex items-center gap-3">
+                    <x-status-badge :tone="match($form->status) { 'open' => 'success', 'draft' => 'muted', 'closed' => 'destructive' }">
+                        {{ ['draft' => 'Brouillon', 'open' => 'Ouvert', 'closed' => 'Fermé'][$form->status] }}
+                    </x-status-badge>
+                    @if ($form->status !== 'draft')
+                        <a href="{{ route('forms.show', $form) }}" target="_blank" class="text-sm font-medium text-primary hover:underline">Lien public</a>
+                    @endif
+                    <a href="{{ route('admin.forms.submissions', $form) }}" wire:navigate class="text-sm font-medium text-primary hover:underline">Inscriptions</a>
+                    <a href="{{ route('admin.forms.settings', $form) }}" wire:navigate class="text-sm font-medium text-primary hover:underline">Paramètres</a>
+                    <a href="{{ route('admin.forms.builder', $form) }}" wire:navigate class="text-sm font-medium text-primary hover:underline">Modifier</a>
+                    <button type="button" wire:click="toggleStatus({{ $form->id }})" class="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold hover:bg-muted">{{ $this->statusLabel($form->status) }}</button>
+                </div>
             </div>
-        </div>
+        @empty
+            <x-empty-state icon="clipboard" title="Aucun formulaire" description="Créez votre premier formulaire de recensement." />
+        @endforelse
     </div>
 </div>

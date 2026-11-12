@@ -1,12 +1,11 @@
 <?php
 
 use App\Models\Form;
-use Illuminate\Support\Facades\Storage;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 use Livewire\WithFileUploads;
 
-new #[Layout('layouts.guest')] class extends Component
+new #[Layout('layouts.public')] class extends Component
 {
     use WithFileUploads;
 
@@ -16,14 +15,16 @@ new #[Layout('layouts.guest')] class extends Component
 
     public bool $submitted = false;
 
+    public ?int $referenceNumber = null;
+
     public function mount(Form $form): void
     {
-        abort_unless($form->status === 'open', 404);
+        abort_unless($form->isOpen(), 404);
 
         $this->form = $form->load('fields');
 
         foreach ($this->form->fields as $field) {
-            $this->values[$field->id] = $field->type === 'checkbox' ? [] : '';
+            $this->values[$field->id] = $field->type === 'checkbox' && $field->hasOptions() ? [] : '';
         }
     }
 
@@ -38,7 +39,7 @@ new #[Layout('layouts.guest')] class extends Component
                 'email' => 'email',
                 'number' => 'numeric',
                 'date' => 'date',
-                'file' => 'file|max:5120',
+                'file', 'image' => 'file|max:5120',
                 'checkbox' => 'array',
                 default => 'string',
             };
@@ -51,22 +52,24 @@ new #[Layout('layouts.guest')] class extends Component
 
     public function submit(): void
     {
-        abort_unless($this->form->status === 'open', 404);
+        abort_unless($this->form->isOpen(), 404);
 
         $this->validate($this->rulesFor());
 
         $submission = $this->form->submissions()->create([
-            'status' => 'pending',
+            'status' => $this->form->auto_validate ? 'validated' : 'pending',
+            'eligibility' => $this->form->auto_validate ? 'eligible' : null,
             'submitted_at' => now(),
             'ip_address' => request()->ip(),
+            'validated_at' => $this->form->auto_validate ? now() : null,
         ]);
 
         foreach ($this->form->fields as $field) {
             $value = $this->values[$field->id] ?? null;
             $filePath = null;
 
-            if ($field->type === 'file' && $value) {
-                $filePath = $value->store('submissions/'.$submission->id, 'local');
+            if ($field->isFileType() && $value) {
+                $filePath = $value->store('submissions/'.$submission->id, 'public');
                 $value = $value->getClientOriginalName();
             } elseif (is_array($value)) {
                 $value = implode(', ', $value);
@@ -79,76 +82,87 @@ new #[Layout('layouts.guest')] class extends Component
             ]);
         }
 
+        $this->referenceNumber = $submission->id;
         $this->submitted = true;
     }
 }; ?>
 
 <div class="max-w-2xl mx-auto py-10 px-4">
-    <div class="bg-white dark:bg-gray-800 shadow sm:rounded-lg p-6">
+    <div class="rounded-2xl border border-border bg-card shadow-card p-6">
         @if ($submitted)
             <div class="text-center py-8">
-                <h1 class="text-xl font-semibold mb-2">Merci !</h1>
-                <p class="text-gray-500">Votre inscription a été enregistrée. Elle sera examinée par un administrateur avant validation.</p>
+                <span class="mx-auto mb-4 flex size-14 items-center justify-center rounded-full bg-success-soft text-success"><x-icon name="check" class="size-7" /></span>
+                <h1 class="text-xl font-bold mb-2">Inscription envoyée !</h1>
+                <p class="text-sm text-muted-foreground">{{ $form->confirmation_message ?: 'Votre inscription a été enregistrée. Elle sera examinée par un administrateur avant validation.' }}</p>
+                <p class="mt-4 text-xs text-muted-foreground">Numéro de référence</p>
+                <p class="text-lg font-bold tabular text-primary">AMS-{{ now()->year }}-{{ str_pad($referenceNumber, 4, '0', STR_PAD_LEFT) }}</p>
+                <a href="{{ route('home') }}" wire:navigate class="mt-6 inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-deep">Retour à l'accueil</a>
             </div>
         @else
-            <h1 class="text-xl font-semibold mb-1">{{ $form->title }}</h1>
-            <p class="text-gray-500 mb-6">{{ $form->description }}</p>
+            <h1 class="text-xl font-bold mb-1">{{ $form->title }}</h1>
+            <p class="text-muted-foreground mb-6 text-sm">{{ $form->description }}</p>
 
             <form wire:submit="submit" class="space-y-5">
                 @foreach ($form->fields as $field)
                     <div>
-                        <x-input-label :value="$field->label.($field->is_required ? ' *' : '')" />
+                        <label class="text-sm font-medium">{{ $field->label }}@if ($field->is_required)<span class="text-destructive"> *</span>@endif</label>
 
                         @switch($field->type)
                             @case('textarea')
-                                <textarea wire:model="values.{{ $field->id }}" rows="3" class="block w-full mt-1 border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 rounded-md shadow-sm"></textarea>
+                            @case('address')
+                                <textarea wire:model="values.{{ $field->id }}" rows="3" class="mt-1 block w-full rounded-lg border-border text-sm"></textarea>
                                 @break
                             @case('select')
-                                <select wire:model="values.{{ $field->id }}" class="block w-full mt-1 border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 rounded-md shadow-sm">
+                            @case('country')
+                            @case('institution')
+                            @case('level')
+                                <select wire:model="values.{{ $field->id }}" class="mt-1 block w-full rounded-lg border-border text-sm">
                                     <option value="">—</option>
-                                    @foreach ($field->options ?? [] as $option)
+                                    @foreach ($field->effectiveOptions() as $option)
                                         <option value="{{ $option }}">{{ $option }}</option>
                                     @endforeach
                                 </select>
                                 @break
                             @case('radio')
                                 <div class="space-y-1 mt-1">
-                                    @foreach ($field->options ?? [] as $option)
-                                        <label class="flex items-center gap-2 text-sm">
-                                            <input type="radio" wire:model="values.{{ $field->id }}" value="{{ $option }}">
-                                            {{ $option }}
-                                        </label>
+                                    @foreach ($field->effectiveOptions() as $option)
+                                        <label class="flex items-center gap-2 text-sm"><input type="radio" wire:model="values.{{ $field->id }}" value="{{ $option }}"> {{ $option }}</label>
                                     @endforeach
                                 </div>
                                 @break
                             @case('checkbox')
                                 <div class="space-y-1 mt-1">
-                                    @foreach ($field->options ?? [] as $option)
-                                        <label class="flex items-center gap-2 text-sm">
-                                            <input type="checkbox" wire:model="values.{{ $field->id }}" value="{{ $option }}">
-                                            {{ $option }}
-                                        </label>
+                                    @foreach ($field->effectiveOptions() as $option)
+                                        <label class="flex items-center gap-2 text-sm"><input type="checkbox" wire:model="values.{{ $field->id }}" value="{{ $option }}"> {{ $option }}</label>
                                     @endforeach
                                 </div>
                                 @break
+                            @case('image')
+                                <input type="file" accept="image/*" wire:model="values.{{ $field->id }}" class="mt-1 block w-full text-sm">
+                                @if ($values[$field->id] instanceof \Livewire\Features\SupportFileUploads\TemporaryUploadedFile)
+                                    <img src="{{ $values[$field->id]->temporaryUrl() }}" class="mt-2 h-24 rounded-lg border border-border object-cover">
+                                @endif
+                                @break
                             @case('file')
-                                <input type="file" wire:model="values.{{ $field->id }}" class="block w-full mt-1 text-sm">
+                                <input type="file" wire:model="values.{{ $field->id }}" class="mt-1 block w-full text-sm">
                                 @break
                             @case('date')
-                                <x-text-input type="date" wire:model="values.{{ $field->id }}" class="block w-full mt-1" />
+                                <input type="date" wire:model="values.{{ $field->id }}" class="mt-1 block w-full rounded-lg border-border text-sm">
                                 @break
                             @case('number')
-                                <x-text-input type="number" wire:model="values.{{ $field->id }}" class="block w-full mt-1" />
+                                <input type="number" wire:model="values.{{ $field->id }}" class="mt-1 block w-full rounded-lg border-border text-sm">
                                 @break
                             @default
-                                <x-text-input type="{{ $field->type === 'email' ? 'email' : 'text' }}" wire:model="values.{{ $field->id }}" class="block w-full mt-1" />
+                                <input type="{{ $field->type === 'email' ? 'email' : 'text' }}" wire:model="values.{{ $field->id }}" class="mt-1 block w-full rounded-lg border-border text-sm">
                         @endswitch
 
-                        <x-input-error :messages="$errors->get('values.'.$field->id)" class="mt-2" />
+                        @error('values.'.$field->id) <p class="mt-1 text-xs text-destructive">{{ $message }}</p> @enderror
                     </div>
                 @endforeach
 
-                <x-primary-button type="submit">Envoyer mon inscription</x-primary-button>
+                <p class="text-xs text-muted-foreground">Vos données sont traitées uniquement dans le cadre du recensement de l'amicale et de la constitution du fichier électoral.</p>
+
+                <button type="submit" class="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-white hover:bg-primary-deep">Envoyer mon inscription</button>
             </form>
         @endif
     </div>

@@ -2,9 +2,7 @@
 
 use Illuminate\Support\Facades\Route;
 
-Route::view('/', 'welcome');
-
-Route::view('dashboard', 'dashboard')
+Route::get('dashboard', fn () => redirect()->route('admin.dashboard'))
     ->middleware(['auth', 'verified'])
     ->name('dashboard');
 

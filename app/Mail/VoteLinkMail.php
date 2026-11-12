@@ -11,9 +11,7 @@ class VoteLinkMail extends Mailable
 {
     use Queueable, SerializesModels;
 
-    public function __construct(public ElectionVoter $voter)
-    {
-    }
+    public function __construct(public ElectionVoter $voter) {}
 
     public function build(): self
     {
