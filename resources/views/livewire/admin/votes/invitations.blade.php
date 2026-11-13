@@ -117,6 +117,7 @@ new #[Layout('layouts.admin', ['title' => 'Invitations de vote'])] class extends
         $voters = $this->election->voters()->whereNull('email_sent_at')->get();
         $sent = 0;
         $failed = 0;
+        $lastError = null;
 
         foreach ($voters as $voter) {
             try {
@@ -124,6 +125,7 @@ new #[Layout('layouts.admin', ['title' => 'Invitations de vote'])] class extends
                 $sent++;
             } catch (\Throwable $e) {
                 $failed++;
+                $lastError = $e->getMessage();
                 report($e);
             }
         }
@@ -131,7 +133,7 @@ new #[Layout('layouts.admin', ['title' => 'Invitations de vote'])] class extends
         ActivityLog::record('invitations.sent', "Envoi de {$sent} invitation(s) pour « {$this->election->title} »".($failed ? " ({$failed} échec(s))" : ''));
 
         session()->flash($failed && ! $sent ? 'error' : 'status', $failed
-            ? "{$sent} email(s) envoyé(s), {$failed} échec(s). Vérifiez la configuration SMTP (MAIL_* dans .env)."
+            ? "{$sent} email(s) envoyé(s), {$failed} échec(s). Erreur : {$lastError}"
             : "{$sent} email(s) envoyé(s) avec succès.");
     }
 
@@ -144,7 +146,7 @@ new #[Layout('layouts.admin', ['title' => 'Invitations de vote'])] class extends
             session()->flash('status', "Invitation relancée pour {$voter->displayName()}.");
         } catch (\Throwable $e) {
             report($e);
-            session()->flash('error', "Échec de l'envoi pour {$voter->displayName()}. Vérifiez la configuration SMTP.");
+            session()->flash('error', "Échec de l'envoi pour {$voter->displayName()} : {$e->getMessage()}");
         }
     }
 

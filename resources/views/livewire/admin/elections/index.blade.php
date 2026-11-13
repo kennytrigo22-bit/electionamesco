@@ -15,6 +15,14 @@ new #[Layout('layouts.admin', ['title' => 'Élections'])] class extends Componen
         ActivityLog::record('election.status_changed', "Élection « {$election->title} » : statut changé en « {$election->statusLabel()} »", $election);
     }
 
+    public function deleteElection(Election $election): void
+    {
+        $title = $election->title;
+        $election->delete();
+        ActivityLog::record('election.deleted', "Élection « {$title} » supprimée (urnes, candidats et électeurs associés retirés).");
+        session()->flash('status', "Élection « {$title} » supprimée.");
+    }
+
     public function with(): array
     {
         return ['elections' => Election::withCount(['voters', 'ballots'])->latest()->get()];
@@ -29,6 +37,10 @@ new #[Layout('layouts.admin', ['title' => 'Élections'])] class extends Componen
             </a>
         </x-slot:actions>
     </x-page-header>
+
+    @if (session('status'))
+        <div class="mb-4 rounded-lg bg-success-soft text-success text-sm px-4 py-2">{{ session('status') }}</div>
+    @endif
 
     <div class="rounded-xl border border-border bg-card shadow-card divide-y divide-border">
         @forelse ($elections as $election)
@@ -48,6 +60,7 @@ new #[Layout('layouts.admin', ['title' => 'Élections'])] class extends Componen
                     <a href="{{ route('admin.votes.invitations', $election) }}" wire:navigate class="text-sm font-medium text-primary hover:underline">Invitations</a>
                     <a href="{{ route('admin.votes.show', $election) }}" wire:navigate class="text-sm font-medium text-primary hover:underline">Suivi</a>
                     <a href="{{ route('admin.resultats.show', $election) }}" wire:navigate class="text-sm font-medium text-primary hover:underline">Résultats</a>
+                    <button type="button" wire:click="deleteElection({{ $election->id }})" wire:confirm="Supprimer définitivement « {{ $election->title }} » ainsi que ses urnes, candidats, électeurs et invitations ? Cette action est irréversible." class="text-sm font-medium text-destructive hover:underline">Supprimer</button>
                 </div>
             </div>
         @empty

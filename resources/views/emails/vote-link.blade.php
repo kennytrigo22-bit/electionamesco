@@ -1,5 +1,5 @@
 <x-mail::message>
-# Bonjour {{ $voter->name }},
+# Bonjour {{ $voter->displayName() }},
 
 Vous êtes invité(e) à voter pour l'élection **{{ $voter->election->title }}** organisée par l'amicale.
 

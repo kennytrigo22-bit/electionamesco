@@ -1,5 +1,8 @@
 <?php
 
+use App\Models\ActivityLog;
+use App\Models\ElectionSource;
+use App\Models\ElectionVoter;
 use App\Models\Form;
 use Illuminate\Support\Str;
 use Livewire\Attributes\Layout;
@@ -40,6 +43,23 @@ new #[Layout('layouts.admin', ['title' => 'Recensement'])] class extends Compone
         $form->update(['status' => $form->status === 'open' ? 'closed' : 'open']);
     }
 
+    public function deleteForm(Form $form): void
+    {
+        $usedByElection = ElectionSource::where('form_id', $form->id)->exists()
+            || ElectionVoter::whereIn('form_submission_id', $form->submissions()->pluck('id'))->exists();
+
+        if ($usedByElection) {
+            session()->flash('error', "Impossible de supprimer « {$form->title} » : il a déjà servi à constituer une liste électorale. Retirez-le d'abord des sources de l'élection concernée.");
+
+            return;
+        }
+
+        $title = $form->title;
+        $form->delete();
+        ActivityLog::record('form.deleted', "Formulaire « {$title} » supprimé (sections, champs et inscriptions associés retirés).");
+        session()->flash('status', "Formulaire « {$title} » supprimé.");
+    }
+
     public function statusLabel(string $status): string
     {
         return match ($status) {
@@ -61,6 +81,13 @@ new #[Layout('layouts.admin', ['title' => 'Recensement'])] class extends Compone
             </button>
         </x-slot:actions>
     </x-page-header>
+
+    @if (session('status'))
+        <div class="mb-4 rounded-lg bg-success-soft text-success text-sm px-4 py-2">{{ session('status') }}</div>
+    @endif
+    @if (session('error'))
+        <div class="mb-4 rounded-lg bg-destructive-soft text-destructive text-sm px-4 py-2">{{ session('error') }}</div>
+    @endif
 
     @if ($showCreate)
         <div class="mb-6 rounded-xl border border-border bg-card p-5 shadow-card">
@@ -98,6 +125,7 @@ new #[Layout('layouts.admin', ['title' => 'Recensement'])] class extends Compone
                     <a href="{{ route('admin.forms.settings', $form) }}" wire:navigate class="text-sm font-medium text-primary hover:underline">Paramètres</a>
                     <a href="{{ route('admin.forms.builder', $form) }}" wire:navigate class="text-sm font-medium text-primary hover:underline">Modifier</a>
                     <button type="button" wire:click="toggleStatus({{ $form->id }})" class="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold hover:bg-muted">{{ $this->statusLabel($form->status) }}</button>
+                    <button type="button" wire:click="deleteForm({{ $form->id }})" wire:confirm="Supprimer définitivement « {{ $form->title }} » ainsi que ses sections, champs et inscriptions ? Cette action est irréversible." class="text-sm font-medium text-destructive hover:underline">Supprimer</button>
                 </div>
             </div>
         @empty

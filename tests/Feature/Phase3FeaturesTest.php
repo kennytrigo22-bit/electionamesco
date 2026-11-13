@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Ballot;
 use App\Models\Election;
+use App\Models\ElectionVoter;
 use App\Models\Form;
 use App\Models\FormSubmission;
 use App\Models\User;
@@ -207,5 +208,57 @@ class Phase3FeaturesTest extends TestCase
 
         $this->assertTrue($orField->isVisibleFor($onlyStatut));
         $this->assertFalse($orField->isVisibleFor($neither));
+    }
+
+    public function test_le_nom_est_devine_dapres_lintitule_du_champ_quand_aucun_nest_marque_identite(): void
+    {
+        $admin = User::factory()->create();
+        $form = Form::create(['title' => 'F', 'slug' => 'f3-'.uniqid(), 'status' => 'open', 'created_by' => $admin->id]);
+        $section = $form->sections()->create(['title' => 'S1', 'order' => 1]);
+
+        $prenom = $form->fields()->create(['form_section_id' => $section->id, 'type' => 'text', 'label' => 'Prénom', 'order' => 1]);
+        $nom = $form->fields()->create(['form_section_id' => $section->id, 'type' => 'text', 'label' => 'Nom', 'order' => 2]);
+
+        $submission = $form->submissions()->create(['status' => 'validated', 'submitted_at' => now()]);
+        $submission->values()->create(['form_field_id' => $prenom->id, 'value' => 'Jean']);
+        $submission->values()->create(['form_field_id' => $nom->id, 'value' => 'Diallo']);
+
+        $this->assertSame('Jean Diallo', $submission->fresh(['form.fields', 'values'])->displayName());
+    }
+
+    public function test_supprimer_une_election_retire_ses_urnes_candidats_et_electeurs(): void
+    {
+        $admin = User::factory()->create();
+        $election = Election::create(['title' => 'À supprimer', 'status' => 'draft', 'created_by' => $admin->id]);
+        $ballot = $election->ballots()->create(['title' => 'Président', 'type' => Ballot::TYPE_SINGLE_CHOICE, 'order' => 1]);
+        $ballot->candidates()->create(['label' => 'Alice', 'order' => 1]);
+        $election->voters()->create(['name' => 'Voter', 'email' => 'voter@example.com']);
+
+        $this->actingAs($admin);
+        Volt::test('admin.elections.index')->call('deleteElection', $election);
+
+        $this->assertModelMissing($election);
+        $this->assertDatabaseMissing('ballots', ['id' => $ballot->id]);
+        $this->assertDatabaseMissing('election_voters', ['election_id' => $election->id]);
+    }
+
+    public function test_supprimer_un_formulaire_deja_utilise_par_une_election_est_refuse(): void
+    {
+        $admin = User::factory()->create();
+        $form = $this->makeCensusForm();
+        $emailField = $form->fields->firstWhere('type', 'email');
+        $statutField = $form->fields->firstWhere('label', 'Statut');
+
+        $submission = $form->submissions()->create(['status' => 'validated', 'submitted_at' => now()]);
+        $submission->values()->create(['form_field_id' => $emailField->id, 'value' => 'voter@example.com']);
+        $submission->values()->create(['form_field_id' => $statutField->id, 'value' => 'Étudiant']);
+
+        $election = Election::create(['title' => 'E', 'status' => 'draft', 'created_by' => $admin->id]);
+        ElectionVoter::create(['election_id' => $election->id, 'form_submission_id' => $submission->id, 'name' => 'Voter', 'email' => 'voter@example.com']);
+
+        $this->actingAs($admin);
+        Volt::test('admin.forms.index')->call('deleteForm', $form);
+
+        $this->assertModelExists($form);
     }
 }

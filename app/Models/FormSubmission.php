@@ -59,6 +59,7 @@ class FormSubmission extends Model
 
         if ($nameFields->isNotEmpty()) {
             $name = $nameFields
+                ->sortBy('order')
                 ->map(fn (FormField $field) => $this->valueFor($field)?->value)
                 ->filter()
                 ->implode(' ');
@@ -68,7 +69,16 @@ class FormSubmission extends Model
             }
         }
 
-        return 'Soumission #'.$this->id;
+        // Aucun champ n'est marqué "Nom identifiant" dans le constructeur : on devine
+        // d'après l'intitulé (Nom, Prénom...) pour éviter d'afficher "Soumission #N".
+        $guessed = $this->form->fields
+            ->filter(fn (FormField $field) => (bool) preg_match('/\b(nom|pr[ée]nom|name)\b/ui', $field->label))
+            ->sortBy('order')
+            ->map(fn (FormField $field) => $this->valueFor($field)?->value)
+            ->filter()
+            ->implode(' ');
+
+        return $guessed !== '' ? $guessed : 'Soumission #'.$this->id;
     }
 
     public function statusLabel(): string
