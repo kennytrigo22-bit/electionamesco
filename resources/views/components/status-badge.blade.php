@@ -1,4 +1,4 @@
-@props(['tone' => 'muted'])
+@props(['tone' => 'muted', 'dot' => true])
 @php
 $tones = [
     'success' => 'bg-success-soft text-success',
@@ -9,6 +9,9 @@ $tones = [
 ];
 $class = $tones[$tone] ?? $tones['muted'];
 @endphp
-<span {{ $attributes->merge(['class' => "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold $class"]) }}>
+<span {{ $attributes->merge(['class' => "inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold $class"]) }}>
+    @if ($dot)
+        <span class="size-1.5 shrink-0 rounded-full bg-current"></span>
+    @endif
     {{ $slot }}
 </span>

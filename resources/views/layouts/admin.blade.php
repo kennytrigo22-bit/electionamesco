@@ -9,6 +9,7 @@
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
 <body class="font-sans antialiased bg-background text-foreground">
+<x-loading-overlay />
 @php
     $navGroups = [
         'Pilotage' => [

@@ -72,6 +72,28 @@ class Phase3FeaturesTest extends TestCase
         $this->assertSame(1, FormSubmission::count());
     }
 
+    public function test_une_seconde_inscription_avec_un_email_different_mais_le_meme_appareil_est_refusee(): void
+    {
+        $form = $this->makeCensusForm();
+        $fields = $form->fields;
+        $emailField = $fields->firstWhere('type', 'email');
+        $statutField = $fields->firstWhere('label', 'Statut');
+
+        Volt::test('public.form-fill', ['form' => $form])
+            ->set("values.{$emailField->id}", 'premier@example.com')
+            ->set("values.{$statutField->id}", 'Étudiant')
+            ->call('submit')
+            ->assertSet('submitted', true);
+
+        $component2 = Volt::test('public.form-fill', ['form' => $form])
+            ->set("values.{$emailField->id}", 'second@example.com')
+            ->set("values.{$statutField->id}", 'Étudiant')
+            ->call('submit');
+
+        $component2->assertSet('submitted', false);
+        $this->assertSame(1, FormSubmission::count());
+    }
+
     public function test_un_champ_conditionnel_nest_pas_obligatoire_quand_il_est_masque(): void
     {
         $form = $this->makeCensusForm();

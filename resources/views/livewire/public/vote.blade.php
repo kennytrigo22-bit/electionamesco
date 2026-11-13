@@ -226,7 +226,7 @@ new #[Layout('layouts.public')] class extends Component
 
                 <div class="flex justify-between">
                     <button type="button" wire:click="prevStep" class="rounded-lg border border-border px-4 py-2 text-sm font-semibold hover:bg-muted">Modifier</button>
-                    <button type="button" wire:click="submit" class="rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-white hover:bg-primary-deep">Confirmer mon vote</button>
+                    <button type="button" wire:click="submit" wire:loading.attr="disabled" wire:target="submit" class="rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-white hover:bg-primary-deep disabled:opacity-50">Confirmer mon vote</button>
                 </div>
             @endif
         </div>

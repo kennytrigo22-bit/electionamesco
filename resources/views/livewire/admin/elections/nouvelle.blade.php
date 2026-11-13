@@ -33,6 +33,23 @@ new #[Layout('layouts.admin', ['title' => 'Nouvelle élection'])] class extends 
 
     public string $nameFilter = '';
 
+    public ?int $sourceBallotIndex = null;
+
+    public ?int $sourceCriterionFieldId = null;
+
+    public string $sourceCriterionValue = '';
+
+    public function updatedSourceCriterionFieldId(): void
+    {
+        $this->sourceCriterionValue = '';
+    }
+
+    public function updatedSelectedFormId(): void
+    {
+        $this->sourceCriterionFieldId = null;
+        $this->sourceCriterionValue = '';
+    }
+
     // Étape 4
     public ?string $opens_at = null;
 
@@ -42,7 +59,9 @@ new #[Layout('layouts.admin', ['title' => 'Nouvelle élection'])] class extends 
 
     public function addBallot(): void
     {
-        $this->ballots[] = ['title' => '', 'type' => 'single_choice', 'max_choices' => null, 'allow_blank' => true, 'allow_abstention' => false, 'candidates' => ['']];
+        $this->ballots[] = ['title' => '', 'type' => 'single_choice', 'max_choices' => null, 'allow_blank' => true, 'allow_abstention' => false, 'candidates' => [
+            ['label' => '', 'photo' => null, 'members' => []],
+        ]];
     }
 
     public function removeBallot(int $index): void
@@ -79,9 +98,18 @@ new #[Layout('layouts.admin', ['title' => 'Nouvelle élection'])] class extends 
             return;
         }
 
-        $this->sources[] = ['form_id' => $this->selectedFormId, 'filter' => $this->nameFilter];
+        $this->sources[] = [
+            'form_id' => $this->selectedFormId,
+            'filter' => $this->nameFilter,
+            'criterion_field_id' => $this->sourceCriterionFieldId,
+            'criterion_value' => $this->sourceCriterionValue ?: null,
+            'ballot_index' => $this->sourceBallotIndex,
+        ];
         $this->selectedFormId = null;
         $this->nameFilter = '';
+        $this->sourceCriterionFieldId = null;
+        $this->sourceCriterionValue = '';
+        $this->sourceBallotIndex = null;
     }
 
     public function removeSource(int $index): void
@@ -115,6 +143,8 @@ new #[Layout('layouts.admin', ['title' => 'Nouvelle élection'])] class extends 
             'closes_at' => $this->closes_at,
             'created_by' => auth()->id(),
         ]);
+
+        $createdBallots = [];
 
         foreach ($this->ballots as $index => $ballot) {
             if (trim($ballot['title']) === '') {
@@ -153,13 +183,24 @@ new #[Layout('layouts.admin', ['title' => 'Nouvelle élection'])] class extends 
                     'order' => $cIndex + 1,
                 ]);
             }
+
+            $createdBallots[$index] = $created;
         }
 
         $voterService = app(ElectionVoterService::class);
         foreach ($this->sources as $source) {
             $form = CensusForm::find($source['form_id']);
             if ($form) {
-                $voterService->addFromForm($election, $form, $source['filter'] ?: null);
+                $ballotId = isset($source['ballot_index']) ? ($createdBallots[$source['ballot_index']]?->id ?? null) : null;
+
+                $voterService->addFromForm(
+                    $election,
+                    $form,
+                    $source['filter'] ?: null,
+                    $source['criterion_field_id'] ?? null,
+                    $source['criterion_value'] ?? null,
+                    $ballotId,
+                );
             }
         }
 
@@ -170,7 +211,18 @@ new #[Layout('layouts.admin', ['title' => 'Nouvelle élection'])] class extends 
 
     public function with(): array
     {
-        return ['forms' => CensusForm::where('status', '!=', 'draft')->get()];
+        $criterionFields = collect();
+
+        if ($this->selectedFormId) {
+            $form = CensusForm::find($this->selectedFormId);
+            $criterionFields = $form?->fields->filter->hasOptions() ?? collect();
+        }
+
+        return [
+            'forms' => CensusForm::where('status', '!=', 'draft')->get(),
+            'namedBallots' => collect($this->ballots)->filter(fn ($b) => trim($b['title']) !== ''),
+            'criterionFields' => $criterionFields,
+        ];
     }
 }; ?>
 
@@ -263,22 +315,54 @@ new #[Layout('layouts.admin', ['title' => 'Nouvelle élection'])] class extends 
             </div>
         @elseif ($step === 3)
             <h2 class="text-sm font-semibold mb-4">Électeurs</h2>
-            <p class="text-xs text-muted-foreground mb-4">Sélectionnez les formulaires sources dont les inscriptions validées constitueront la liste électorale (filtre nom optionnel).</p>
-            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
-                <select wire:model="selectedFormId" class="rounded-lg border-border text-sm sm:col-span-1">
+            <p class="text-xs text-muted-foreground mb-4">Sélectionnez les formulaires sources dont les inscriptions validées constitueront la liste électorale. Filtrez par nom et/ou par un critère (établissement, niveau, ville...) et choisissez directement l'urne de destination si l'élection en compte plusieurs.</p>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+                <select wire:model.live="selectedFormId" class="rounded-lg border-border text-sm">
                     <option value="">— Formulaire —</option>
                     @foreach ($forms as $form)
                         <option value="{{ $form->id }}">{{ $form->title }}</option>
                     @endforeach
                 </select>
                 <input type="text" wire:model="nameFilter" placeholder="Filtrer par nom (optionnel)" class="rounded-lg border-border text-sm">
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+                @if ($criterionFields->isNotEmpty())
+                    <select wire:model.live="sourceCriterionFieldId" class="rounded-lg border-border text-sm">
+                        <option value="">Tous les critères</option>
+                        @foreach ($criterionFields as $cf)
+                            <option value="{{ $cf->id }}">{{ $cf->label }}</option>
+                        @endforeach
+                    </select>
+                    @if ($sourceCriterionFieldId)
+                        @php $cf = $criterionFields->firstWhere('id', $sourceCriterionFieldId); @endphp
+                        <select wire:model="sourceCriterionValue" class="rounded-lg border-border text-sm">
+                            <option value="">—</option>
+                            @foreach ($cf?->effectiveOptions() ?? [] as $option)
+                                <option value="{{ $option }}">{{ $option }}</option>
+                            @endforeach
+                        </select>
+                    @endif
+                @endif
+                @if ($namedBallots->count() > 1)
+                    <select wire:model="sourceBallotIndex" class="rounded-lg border-border text-sm">
+                        <option value="">Toutes les urnes</option>
+                        @foreach ($namedBallots as $bIndex => $b)
+                            <option value="{{ $bIndex }}">Urne : {{ $b['title'] }}</option>
+                        @endforeach
+                    </select>
+                @endif
                 <button type="button" wire:click="addSource" class="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-deep">Ajouter la source</button>
             </div>
             <div class="space-y-2">
                 @foreach ($sources as $i => $source)
                     @php $f = $forms->firstWhere('id', $source['form_id']); @endphp
                     <div class="flex items-center justify-between rounded-lg border border-border px-3 py-2 text-sm">
-                        <span>{{ $f?->title }} @if($source['filter']) (filtre: "{{ $source['filter'] }}") @endif</span>
+                        <span>
+                            {{ $f?->title }}
+                            @if($source['filter']) (nom : "{{ $source['filter'] }}") @endif
+                            @if(!empty($source['criterion_value'])) (critère : "{{ $source['criterion_value'] }}") @endif
+                            @if(isset($source['ballot_index']) && $source['ballot_index'] !== null) → urne « {{ $namedBallots[$source['ballot_index']]['title'] ?? '?' }} » @endif
+                        </span>
                         <button type="button" wire:click="removeSource({{ $i }})" class="text-destructive"><x-icon name="x" class="size-4" /></button>
                     </div>
                 @endforeach
@@ -313,9 +397,9 @@ new #[Layout('layouts.admin', ['title' => 'Nouvelle élection'])] class extends 
     <div class="mt-5 flex justify-between">
         <button type="button" wire:click="back" @if($step === 1) disabled @endif class="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-semibold hover:bg-muted disabled:opacity-40"><x-icon name="chevron-left" class="size-4" /> Précédent</button>
         @if ($step < 4)
-            <button type="button" wire:click="next" class="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-deep">Suivant <x-icon name="chevron-right" class="size-4" /></button>
+            <button type="button" wire:click="next" wire:loading.attr="disabled" wire:target="next" class="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-deep disabled:opacity-50">Suivant <x-icon name="chevron-right" class="size-4" /></button>
         @else
-            <button type="button" wire:click="publish" class="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-white hover:bg-primary-deep"><x-icon name="check" class="size-4" /> Créer l'élection</button>
+            <button type="button" wire:click="publish" wire:loading.attr="disabled" wire:target="publish" class="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-white hover:bg-primary-deep disabled:opacity-50"><x-icon name="check" class="size-4" /> Créer l'élection</button>
         @endif
     </div>
 </div>

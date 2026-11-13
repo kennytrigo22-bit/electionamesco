@@ -76,11 +76,27 @@ new #[Layout('layouts.public')] class extends Component
             </div>
         </div>
 
-        <div class="rounded-2xl border border-border bg-card p-6 shadow-card flex items-start gap-4">
-            <span class="flex size-10 items-center justify-center rounded-full bg-gold-soft text-gold-foreground shrink-0"><x-icon name="shield-check" class="size-5" /></span>
-            <div>
-                <p class="font-semibold">Sécurité et transparence</p>
-                <p class="text-sm text-muted-foreground">Chaque lien de vote est unique et à usage unique. Les identités des électeurs et les bulletins sont stockés séparément : personne ne peut relier votre vote à votre identité.</p>
+    </section>
+
+    <section class="bg-sidebar text-white">
+        <div class="mx-auto max-w-5xl px-4 py-12">
+            <h2 class="text-center text-lg font-bold">Sécurité et transparence</h2>
+            <div class="mt-8 grid grid-cols-1 sm:grid-cols-3 gap-6">
+                <div class="text-center">
+                    <span class="mx-auto mb-3 flex size-12 items-center justify-center rounded-full bg-white/10"><x-icon name="lock" class="size-6" /></span>
+                    <p class="font-semibold">Vote secret</p>
+                    <p class="mt-1 text-sm text-white/70">Identités et bulletins sont stockés séparément : personne ne peut relier un vote à son auteur.</p>
+                </div>
+                <div class="text-center">
+                    <span class="mx-auto mb-3 flex size-12 items-center justify-center rounded-full bg-white/10"><x-icon name="user-check" class="size-6" /></span>
+                    <p class="font-semibold">Un électeur, un vote</p>
+                    <p class="mt-1 text-sm text-white/70">Chaque lien de vote est unique et à usage unique, invalidé dès son utilisation.</p>
+                </div>
+                <div class="text-center">
+                    <span class="mx-auto mb-3 flex size-12 items-center justify-center rounded-full bg-white/10"><x-icon name="shield-check" class="size-6" /></span>
+                    <p class="font-semibold">Transparence</p>
+                    <p class="mt-1 text-sm text-white/70">Chaque action administrative est consignée dans un journal d'audit public à la commission électorale.</p>
+                </div>
             </div>
         </div>
     </section>

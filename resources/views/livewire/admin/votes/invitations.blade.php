@@ -94,7 +94,7 @@ new #[Layout('layouts.admin', ['title' => 'Invitations de vote'])] class extends
         $form = CensusForm::findOrFail($this->selectedFormId);
         $added = app(ElectionVoterService::class)->addFromForm($this->election, $form, $this->nameFilter ?: null);
 
-        session()->flash('status', "{$added} électeur(s) ajouté(s).");
+        session()->flash('status', "{$added->count()} électeur(s) ajouté(s).");
         $this->reset(['selectedFormId', 'nameFilter']);
     }
 
@@ -249,7 +249,7 @@ new #[Layout('layouts.admin', ['title' => 'Invitations de vote'])] class extends
                         @endforeach
                     </select>
                 </div>
-                <button type="submit" class="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-deep">Assigner le groupe</button>
+                <button type="submit" wire:loading.attr="disabled" wire:target="assignToBallot" class="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-deep disabled:opacity-50">Assigner le groupe</button>
             </form>
             <p class="mt-2 text-xs text-muted-foreground">Sans critère, l'action assigne tous les électeurs non assignés à l'urne choisie. Un électeur assigné ne peut voter que dans son urne.</p>
         </div>
@@ -265,7 +265,7 @@ new #[Layout('layouts.admin', ['title' => 'Invitations de vote'])] class extends
                 @endforeach
             </select>
             <input type="text" wire:model="nameFilter" placeholder="Filtrer par nom (optionnel)" class="rounded-lg border-border text-sm">
-            <button type="submit" class="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-deep">Ajouter les inscriptions validées</button>
+            <button type="submit" wire:loading.attr="disabled" wire:target="addSource" class="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-deep disabled:opacity-50">Ajouter les inscriptions validées</button>
         </form>
         @if ($sources->isNotEmpty())
             <div class="mt-3 text-xs text-muted-foreground">
@@ -279,7 +279,7 @@ new #[Layout('layouts.admin', ['title' => 'Invitations de vote'])] class extends
             <h2 class="text-sm font-semibold">Liste électorale ({{ $voters->count() }})</h2>
             <div class="flex items-center gap-2">
                 <input type="text" wire:model.live.debounce.300ms="search" placeholder="Rechercher..." class="rounded-lg border-border text-sm">
-                <button type="button" wire:click="sendEmails" wire:confirm="Envoyer le lien de vote par email à tous les électeurs qui ne l'ont pas encore reçu ?" class="rounded-lg border border-border px-3 py-1.5 text-sm font-semibold hover:bg-muted">Envoyer les liens</button>
+                <button type="button" wire:click="sendEmails" wire:confirm="Envoyer le lien de vote par email à tous les électeurs qui ne l'ont pas encore reçu ?" wire:loading.attr="disabled" wire:target="sendEmails" class="rounded-lg border border-border px-3 py-1.5 text-sm font-semibold hover:bg-muted disabled:opacity-50">Envoyer les liens</button>
                 <button type="button" wire:click="exportExcel" class="rounded-lg bg-primary px-3 py-1.5 text-sm font-semibold text-white hover:bg-primary-deep">Exporter Excel</button>
                 <button type="button" wire:click="exportCsv" class="rounded-lg border border-border px-3 py-1.5 text-sm font-semibold hover:bg-muted">CSV</button>
             </div>

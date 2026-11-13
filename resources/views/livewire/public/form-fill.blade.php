@@ -1,7 +1,9 @@
 <?php
 
+use App\Models\ActivityLog;
 use App\Models\Form;
 use App\Models\FormSubmission;
+use Illuminate\Support\Facades\Cookie;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 use Livewire\WithFileUploads;
@@ -77,23 +79,32 @@ new #[Layout('layouts.public')] class extends Component
 
         $this->validate($this->rulesFor($this->visibleFields($this->form->sections[$this->step])));
 
+        $deviceCookie = 'amesco_submitted_'.$this->form->id;
+
         if ($this->form->one_response_per_person) {
+            $alreadySubmittedOnThisDevice = request()->cookie($deviceCookie) !== null;
+
+            $alreadySubmittedFromThisNetwork = FormSubmission::where('form_id', $this->form->id)
+                ->where('ip_address', request()->ip())
+                ->exists();
+
+            $alreadySubmittedWithThisEmail = false;
             $emailField = $this->form->fields->firstWhere('type', 'email');
 
             if ($emailField) {
                 $email = trim((string) ($this->values[$emailField->id] ?? ''));
 
                 if ($email !== '') {
-                    $exists = FormSubmission::where('form_id', $this->form->id)
+                    $alreadySubmittedWithThisEmail = FormSubmission::where('form_id', $this->form->id)
                         ->whereHas('values', fn ($q) => $q->where('form_field_id', $emailField->id)->where('value', $email))
                         ->exists();
-
-                    if ($exists) {
-                        $this->duplicateError = 'Une inscription existe déjà avec cette adresse e-mail. Une seule réponse par personne est autorisée pour ce formulaire.';
-
-                        return;
-                    }
                 }
+            }
+
+            if ($alreadySubmittedOnThisDevice || $alreadySubmittedFromThisNetwork || $alreadySubmittedWithThisEmail) {
+                $this->duplicateError = 'Une inscription a déjà été envoyée depuis cet appareil ou cette adresse e-mail. Une seule réponse par personne est autorisée pour ce formulaire.';
+
+                return;
             }
         }
 
@@ -126,6 +137,22 @@ new #[Layout('layouts.public')] class extends Component
                 'file_path' => $filePath,
             ]);
         }
+
+        if ($this->form->one_response_per_person) {
+            Cookie::queue(Cookie::forever($deviceCookie, (string) $submission->id));
+        }
+
+        $submission = $submission->fresh(['form.fields', 'values.field']);
+        $summary = $submission->values
+            ->filter(fn ($v) => ! $v->field->isFileType())
+            ->map(fn ($v) => "{$v->field->label} : {$v->value}")
+            ->implode(' ; ');
+
+        ActivityLog::record(
+            'submission.created',
+            "Inscription « {$submission->displayName()} » reçue pour « {$this->form->title} » (IP {$submission->ip_address}) — {$summary}",
+            $submission,
+        );
 
         $this->referenceNumber = $submission->id;
         $this->submitted = true;
@@ -242,7 +269,7 @@ new #[Layout('layouts.public')] class extends Component
                         @else
                             <span></span>
                         @endif
-                        <button type="submit" class="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-white hover:bg-primary-deep">
+                        <button type="submit" wire:loading.attr="disabled" wire:target="submit,nextStep" class="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-white hover:bg-primary-deep disabled:opacity-50">
                             {{ $step + 1 === $form->sections->count() ? 'Envoyer mon inscription' : 'Continuer' }}
                         </button>
                     </div>

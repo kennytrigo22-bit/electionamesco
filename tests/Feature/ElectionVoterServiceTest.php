@@ -39,7 +39,7 @@ class ElectionVoterServiceTest extends TestCase
 
         $added = app(ElectionVoterService::class)->addFromForm($election, $form);
 
-        $this->assertSame(1, $added);
+        $this->assertSame(1, $added->count());
         $this->assertSame(1, $election->voters()->count());
         $this->assertSame('alice@example.com', $election->voters()->first()->email);
     }
@@ -68,7 +68,7 @@ class ElectionVoterServiceTest extends TestCase
         $service->addFromForm($election, $form);
         $secondRun = $service->addFromForm($election, $form);
 
-        $this->assertSame(0, $secondRun);
+        $this->assertSame(1, $secondRun->count());
         $this->assertSame(1, $election->voters()->count());
     }
 }

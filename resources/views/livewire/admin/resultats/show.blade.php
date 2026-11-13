@@ -110,7 +110,7 @@ new #[Layout('layouts.admin', ['title' => 'Résultats'])] class extends Componen
             <button type="button" onclick="window.print()" class="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-semibold hover:bg-muted no-print">Imprimer / PDF</button>
             <button type="button" wire:click="exportCsv" class="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-semibold hover:bg-muted no-print">Exporter CSV</button>
             @if ($election->status !== 'closed')
-                <button type="button" wire:click="publish" wire:confirm="Clôturer l'élection et publier les résultats ?" class="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-deep no-print">Publier les résultats</button>
+                <button type="button" wire:click="publish" wire:confirm="Clôturer l'élection et publier les résultats ?" wire:loading.attr="disabled" wire:target="publish" class="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-deep no-print disabled:opacity-50">Publier les résultats</button>
             @endif
         </x-slot:actions>
     </x-page-header>

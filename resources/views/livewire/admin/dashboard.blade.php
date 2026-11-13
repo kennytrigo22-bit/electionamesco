@@ -35,6 +35,14 @@ new #[Layout('layouts.admin', ['title' => 'Tableau de bord'])] class extends Com
         $maxWeek = max(1, $weeks->max('total'));
 
         $activities = ActivityLog::with('actor')->latest('created_at')->limit(6)->get();
+        $latestMembers = FormSubmission::with(['form', 'values.field'])->latest('submitted_at')->limit(6)->get();
+        $ballotsBreakdown = $activeElection
+            ? $activeElection->ballots->map(fn ($ballot) => [
+                'title' => $ballot->title,
+                'voters' => $activeElection->voters()->where('ballot_id', $ballot->id)->count(),
+                'voted' => $activeElection->voters()->where('ballot_id', $ballot->id)->whereNotNull('used_at')->count(),
+            ])
+            : collect();
 
         return [
             'title' => 'Tableau de bord',
@@ -50,6 +58,8 @@ new #[Layout('layouts.admin', ['title' => 'Tableau de bord'])] class extends Com
             'weeks' => $weeks,
             'maxWeek' => $maxWeek,
             'activities' => $activities,
+            'latestMembers' => $latestMembers,
+            'ballotsBreakdown' => $ballotsBreakdown,
         ];
     }
 }; ?>
@@ -132,10 +142,43 @@ new #[Layout('layouts.admin', ['title' => 'Tableau de bord'])] class extends Com
                         <span class="font-semibold">{{ $activeElection->title }}</span>
                         <x-status-badge tone="success">Ouverte</x-status-badge>
                     </div>
-                    <p class="mt-1 text-xs text-muted-foreground">{{ $activeElection->voters()->count() }} électeurs inscrits · {{ $activeElection->voters()->whereNotNull('used_at')->count() }} votes enregistrés</p>
+                    <p class="mt-1 text-xs text-muted-foreground">
+                        {{ $activeElection->voters()->count() }} électeurs inscrits · {{ $activeElection->voters()->whereNotNull('used_at')->count() }} votes enregistrés
+                        @if ($activeElection->closes_at) · Clôture le {{ $activeElection->closes_at->translatedFormat('d F Y à H:i') }} @endif
+                    </p>
                     <div class="mt-3 h-2 w-full rounded-full bg-muted">
                         <div class="h-2 rounded-full bg-primary" style="width: {{ $stats['participation'] }}%"></div>
                     </div>
+
+                    @if ($activeElection->closes_at && $activeElection->closes_at->isFuture())
+                        <div x-data="{
+                                target: new Date('{{ $activeElection->closes_at->toIso8601String() }}').getTime(),
+                                d: 0, h: 0, m: 0, s: 0,
+                                tick() {
+                                    const diff = Math.max(0, this.target - Date.now());
+                                    this.d = Math.floor(diff / 86400000);
+                                    this.h = Math.floor(diff % 86400000 / 3600000);
+                                    this.m = Math.floor(diff % 3600000 / 60000);
+                                    this.s = Math.floor(diff % 60000 / 1000);
+                                }
+                            }" x-init="tick(); setInterval(() => tick(), 1000)" class="mt-4 grid grid-cols-4 gap-2 text-center">
+                            <div class="rounded-lg bg-surface py-2"><span class="block text-lg font-bold tabular" x-text="d"></span><span class="text-[10px] text-muted-foreground">jours</span></div>
+                            <div class="rounded-lg bg-surface py-2"><span class="block text-lg font-bold tabular" x-text="h"></span><span class="text-[10px] text-muted-foreground">heures</span></div>
+                            <div class="rounded-lg bg-surface py-2"><span class="block text-lg font-bold tabular" x-text="m"></span><span class="text-[10px] text-muted-foreground">min</span></div>
+                            <div class="rounded-lg bg-surface py-2"><span class="block text-lg font-bold tabular" x-text="s"></span><span class="text-[10px] text-muted-foreground">sec</span></div>
+                        </div>
+                    @endif
+
+                    @if ($ballotsBreakdown->count() > 1)
+                        <div class="mt-4 space-y-2 border-t border-border pt-3">
+                            @foreach ($ballotsBreakdown as $b)
+                                <div>
+                                    <div class="flex justify-between text-xs"><span class="font-medium">{{ $b['title'] }}</span><span class="text-muted-foreground tabular">{{ $b['voted'] }}/{{ $b['voters'] }}</span></div>
+                                    <div class="mt-0.5 h-1.5 w-full rounded-full bg-muted"><div class="h-1.5 rounded-full bg-primary" style="width: {{ $b['voters'] > 0 ? $b['voted'] / $b['voters'] * 100 : 0 }}%"></div></div>
+                                </div>
+                            @endforeach
+                        </div>
+                    @endif
                 </div>
             @else
                 <x-empty-state icon="vote" title="Aucune élection en cours" description="Créez une élection pour commencer un scrutin." />
@@ -143,7 +186,10 @@ new #[Layout('layouts.admin', ['title' => 'Tableau de bord'])] class extends Com
         </div>
 
         <div class="rounded-xl border border-border bg-card p-5 shadow-card">
-            <h2 class="text-sm font-semibold mb-3">Activité récente</h2>
+            <div class="flex items-center justify-between mb-3">
+                <h2 class="text-sm font-semibold">Activité récente</h2>
+                <a href="{{ route('admin.rapports.index') }}" wire:navigate class="text-xs font-semibold text-primary hover:underline">Tout voir</a>
+            </div>
             <ul class="space-y-3 text-sm">
                 @forelse ($activities as $activity)
                     <li class="flex gap-2">
@@ -158,5 +204,46 @@ new #[Layout('layouts.admin', ['title' => 'Tableau de bord'])] class extends Com
                 @endforelse
             </ul>
         </div>
+    </div>
+
+    <div class="rounded-xl border border-border bg-card p-5 shadow-card">
+        <div class="flex items-center justify-between mb-3">
+            <h2 class="text-sm font-semibold">Dernières inscriptions</h2>
+            <a href="{{ route('admin.membres.index') }}" wire:navigate class="text-xs font-semibold text-primary hover:underline">Tout voir</a>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead class="text-xs uppercase text-muted-foreground">
+                    <tr>
+                        <th class="px-2 py-2 text-left">Membre</th>
+                        <th class="px-2 py-2 text-left">Formulaire</th>
+                        <th class="px-2 py-2 text-left">Statut</th>
+                        <th class="px-2 py-2 text-left">Date</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-border">
+                    @forelse ($latestMembers as $member)
+                        <tr>
+                            <td class="px-2 py-2">
+                                <div class="flex items-center gap-2">
+                                    <x-person-avatar :name="$member->displayName()" class="size-6" />
+                                    <span class="font-medium">{{ $member->displayName() }}</span>
+                                </div>
+                            </td>
+                            <td class="px-2 py-2 text-muted-foreground">{{ $member->form->title }}</td>
+                            <td class="px-2 py-2"><x-status-badge :tone="match($member->status) { 'validated' => 'success', 'pending' => 'gold', 'rejected' => 'destructive', 'suspended' => 'muted' }">{{ $member->statusLabel() }}</x-status-badge></td>
+                            <td class="px-2 py-2 text-muted-foreground">{{ $member->submitted_at->format('d/m/Y') }}</td>
+                        </tr>
+                    @empty
+                        <tr><td colspan="4"><x-empty-state icon="users" title="Aucune inscription" /></td></tr>
+                    @endforelse
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="flex items-center gap-3 rounded-xl border border-border bg-primary-soft/40 p-4 text-sm text-primary-deep">
+        <x-icon name="shield-check" class="size-5 shrink-0" />
+        <p>Le secret du vote est garanti : aucun administrateur ne peut relier un électeur à son bulletin. Les votes sont totalement anonymes et dissociés des identités.</p>
     </div>
 </div>

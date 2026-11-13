@@ -9,6 +9,7 @@
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
 <body class="font-sans antialiased bg-background text-foreground min-h-screen flex flex-col">
+<x-loading-overlay />
     <header class="border-b border-border bg-card">
         <div class="mx-auto max-w-5xl px-4 py-4 flex items-center justify-between">
             <a href="{{ route('home') }}" wire:navigate class="flex items-center gap-2">

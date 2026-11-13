@@ -273,8 +273,8 @@ new #[Layout('layouts.admin', ['title' => 'Constructeur de formulaire'])] class 
                         <textarea rows="2" wire:change="updateDescription($event.target.value)" class="w-full resize-none rounded-md border-b border-transparent bg-transparent text-sm text-muted-foreground outline-none focus:border-primary">{{ $form->description }}</textarea>
                         <div class="flex flex-wrap gap-2 pt-1">
                             <x-status-badge tone="{{ $form->status === 'open' ? 'success' : 'muted' }}">{{ $form->status === 'open' ? 'Publié' : 'Brouillon' }}</x-status-badge>
-                            <x-status-badge tone="muted">{{ $sections->count() }} sections</x-status-badge>
-                            <x-status-badge tone="gold">{{ $totalRequired }} champs obligatoires</x-status-badge>
+                            <x-status-badge tone="muted" :dot="false">{{ $sections->count() }} sections</x-status-badge>
+                            <x-status-badge tone="gold" :dot="false">{{ $totalRequired }} champs obligatoires</x-status-badge>
                         </div>
                     </div>
                 </div>

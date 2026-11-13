@@ -25,9 +25,86 @@ new #[Layout('layouts.admin', ['title' => 'Membres'])] class extends Component
 
     public bool $showFilters = false;
 
+    public ?FormSubmission $detail = null;
+
+    public bool $editing = false;
+
+    public array $editValues = [];
+
     public function mount(): void
     {
         $this->search = (string) request()->query('q', '');
+    }
+
+    public function showDetail(FormSubmission $submission): void
+    {
+        $this->detail = $submission->load(['values.field', 'form.fields']);
+        $this->editing = false;
+    }
+
+    public function closeDetail(): void
+    {
+        $this->detail = null;
+        $this->editing = false;
+    }
+
+    public function startEdit(): void
+    {
+        $this->editing = true;
+        $this->editValues = $this->detail->values->mapWithKeys(fn ($v) => [$v->form_field_id => $v->value])->all();
+    }
+
+    public function saveEdit(): void
+    {
+        $before = $this->detail->values->mapWithKeys(fn ($v) => [$v->field->label => $v->value])->all();
+        $changes = [];
+
+        foreach ($this->detail->form->fields as $field) {
+            if ($field->isFileType()) {
+                continue;
+            }
+
+            $newValue = trim((string) ($this->editValues[$field->id] ?? ''));
+            $old = $before[$field->label] ?? null;
+
+            if ($newValue !== (string) $old) {
+                $changes[] = "{$field->label} : « ".($old ?: '—')." » → « {$newValue} »";
+            }
+
+            $value = $this->detail->valueFor($field);
+            if ($value) {
+                $value->update(['value' => $newValue]);
+            } else {
+                $this->detail->values()->create(['form_field_id' => $field->id, 'value' => $newValue]);
+            }
+        }
+
+        if ($changes) {
+            ActivityLog::record('member.updated', "Fiche de « {$this->detail->displayName()} » modifiée : ".implode(' ; ', $changes), $this->detail);
+        }
+
+        $this->detail = $this->detail->fresh(['values.field', 'form.fields']);
+        $this->editing = false;
+    }
+
+    public function deleteMember(FormSubmission $submission): void
+    {
+        $submission->load('values.field', 'form');
+        $name = $submission->displayName();
+        $formTitle = $submission->form->title;
+        $summary = $submission->values
+            ->filter(fn ($v) => ! $v->field->isFileType())
+            ->map(fn ($v) => "{$v->field->label} : {$v->value}")
+            ->implode(' ; ');
+
+        $submission->values()->delete();
+        $submission->delete();
+
+        ActivityLog::record('member.deleted', "Membre « {$name} » supprimé (formulaire « {$formTitle} ») — {$summary}");
+
+        if ($this->detail?->id === $submission->id) {
+            $this->detail = null;
+        }
     }
 
     public function updatedCriterionFieldId(): void
@@ -220,16 +297,16 @@ new #[Layout('layouts.admin', ['title' => 'Membres'])] class extends Component
             </thead>
             <tbody class="divide-y divide-border">
                 @forelse ($members as $member)
-                    <tr>
-                        <td class="px-4 py-3"><input type="checkbox" wire:model.live="selected" value="{{ $member->id }}" class="rounded border-border"></td>
-                        <td class="px-4 py-3">
+                    <tr class="hover:bg-surface/70">
+                        <td class="px-4 py-3" onclick="event.stopPropagation()"><input type="checkbox" wire:model.live="selected" value="{{ $member->id }}" class="rounded border-border"></td>
+                        <td class="px-4 py-3 cursor-pointer" wire:click="showDetail({{ $member->id }})">
                             <div class="flex items-center gap-2">
                                 <x-person-avatar :name="$member->displayName()" class="size-7" />
-                                <span class="font-medium">{{ $member->displayName() }}</span>
+                                <span class="font-medium hover:text-primary">{{ $member->displayName() }}</span>
                             </div>
                         </td>
-                        <td class="px-4 py-3 text-muted-foreground">{{ $member->form->title }}</td>
-                        <td class="px-4 py-3 text-muted-foreground">{{ $member->submitted_at->format('d/m/Y') }}</td>
+                        <td class="px-4 py-3 text-muted-foreground cursor-pointer" wire:click="showDetail({{ $member->id }})">{{ $member->form->title }}</td>
+                        <td class="px-4 py-3 text-muted-foreground cursor-pointer" wire:click="showDetail({{ $member->id }})">{{ $member->submitted_at->format('d/m/Y') }}</td>
                         <td class="px-4 py-3">
                             <x-status-badge :tone="match($member->status) { 'validated' => 'success', 'pending' => 'gold', 'rejected' => 'destructive', 'suspended' => 'muted' }">{{ $member->statusLabel() }}</x-status-badge>
                         </td>
@@ -240,16 +317,16 @@ new #[Layout('layouts.admin', ['title' => 'Membres'])] class extends Component
                                 <span class="text-xs text-muted-foreground">—</span>
                             @endif
                         </td>
-                        <td class="px-4 py-3 text-right">
+                        <td class="px-4 py-3 text-right" onclick="event.stopPropagation()">
                             <div class="flex justify-end gap-1.5">
                                 @if ($member->status !== 'validated')
-                                    <button type="button" wire:click="validateMember({{ $member->id }})" class="rounded-lg p-1.5 text-primary hover:bg-primary-soft" title="Valider"><x-icon name="check" class="size-4" /></button>
+                                    <button type="button" wire:click="validateMember({{ $member->id }})" wire:loading.attr="disabled" class="rounded-lg p-1.5 text-primary hover:bg-primary-soft disabled:opacity-40" title="Valider"><x-icon name="check" class="size-4" /></button>
                                 @endif
                                 @if ($member->status !== 'rejected')
-                                    <button type="button" wire:click="rejectMember({{ $member->id }})" class="rounded-lg p-1.5 text-destructive hover:bg-destructive-soft" title="Rejeter"><x-icon name="x" class="size-4" /></button>
+                                    <button type="button" wire:click="rejectMember({{ $member->id }})" wire:loading.attr="disabled" class="rounded-lg p-1.5 text-destructive hover:bg-destructive-soft disabled:opacity-40" title="Rejeter"><x-icon name="x" class="size-4" /></button>
                                 @endif
                                 @if ($member->status !== 'suspended')
-                                    <button type="button" wire:click="suspendMember({{ $member->id }})" wire:confirm="Suspendre ce membre ?" class="rounded-lg p-1.5 text-muted-foreground hover:bg-muted" title="Suspendre"><x-icon name="lock" class="size-4" /></button>
+                                    <button type="button" wire:click="suspendMember({{ $member->id }})" wire:confirm="Suspendre ce membre ?" wire:loading.attr="disabled" class="rounded-lg p-1.5 text-muted-foreground hover:bg-muted disabled:opacity-40" title="Suspendre"><x-icon name="lock" class="size-4" /></button>
                                 @endif
                             </div>
                         </td>
@@ -262,4 +339,75 @@ new #[Layout('layouts.admin', ['title' => 'Membres'])] class extends Component
     </div>
 
     <div class="mt-4">{{ $members->links() }}</div>
+
+    @if ($detail)
+        <div class="fixed inset-0 z-40 flex items-start justify-end bg-black/30 p-4" wire:click.self="closeDetail">
+            <div class="h-full w-full max-w-lg overflow-y-auto rounded-xl bg-card p-6 shadow-elevated">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-lg font-bold">{{ $detail->displayName() }}</h2>
+                    <button type="button" wire:click="closeDetail" class="rounded-lg p-1.5 hover:bg-muted"><x-icon name="x" class="size-4" /></button>
+                </div>
+                <div class="mb-4 flex flex-wrap gap-2">
+                    <x-status-badge :tone="match($detail->status) { 'validated' => 'success', 'pending' => 'gold', 'rejected' => 'destructive', 'suspended' => 'muted' }">{{ $detail->statusLabel() }}</x-status-badge>
+                    @if ($detail->eligibility)
+                        <x-status-badge :tone="match($detail->eligibility) { 'eligible' => 'success', 'non_eligible' => 'destructive', 'verification' => 'gold' }">{{ $detail->eligibilityLabel() }}</x-status-badge>
+                    @endif
+                    <x-status-badge tone="muted">{{ $detail->form->title }}</x-status-badge>
+                </div>
+
+                @if ($editing)
+                    <form wire:submit="saveEdit" class="space-y-3">
+                        @foreach ($detail->form->fields as $field)
+                            @continue($field->isFileType())
+                            <div>
+                                <label class="text-xs font-medium text-muted-foreground">{{ $field->label }}</label>
+                                @if ($field->hasOptions())
+                                    <select wire:model="editValues.{{ $field->id }}" class="mt-1 block w-full rounded-lg border-border text-sm">
+                                        <option value="">—</option>
+                                        @foreach ($field->effectiveOptions() as $option)
+                                            <option value="{{ $option }}">{{ $option }}</option>
+                                        @endforeach
+                                    </select>
+                                @else
+                                    <input type="text" wire:model="editValues.{{ $field->id }}" class="mt-1 block w-full rounded-lg border-border text-sm">
+                                @endif
+                            </div>
+                        @endforeach
+                        <div class="flex gap-2 pt-2">
+                            <button type="submit" wire:loading.attr="disabled" class="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-deep disabled:opacity-60">Enregistrer</button>
+                            <button type="button" wire:click="$set('editing', false)" class="rounded-lg border border-border px-4 py-2 text-sm font-semibold hover:bg-muted">Annuler</button>
+                        </div>
+                    </form>
+                @else
+                    <dl class="space-y-3 text-sm mb-6">
+                        @foreach ($detail->form->fields as $field)
+                            @php $value = $detail->valueFor($field); @endphp
+                            <div>
+                                <dt class="text-xs text-muted-foreground">{{ $field->label }}</dt>
+                                <dd class="font-medium">
+                                    @if ($value?->isImage())
+                                        <img src="{{ $value->fileUrl() }}" class="mt-1 h-20 w-20 rounded-lg border border-border object-cover">
+                                    @elseif ($value?->file_path)
+                                        <a href="{{ $value->fileUrl() }}" target="_blank" class="text-primary hover:underline">{{ $value->value }}</a>
+                                    @else
+                                        {{ $value?->value ?: '—' }}
+                                    @endif
+                                </dd>
+                            </div>
+                        @endforeach
+                    </dl>
+                    <div class="flex flex-wrap gap-2 border-t border-border pt-4">
+                        @if ($detail->status !== 'validated')
+                            <button type="button" wire:click="validateMember({{ $detail->id }})" class="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-primary-deep">Valider</button>
+                        @endif
+                        @if ($detail->status !== 'rejected')
+                            <button type="button" wire:click="rejectMember({{ $detail->id }})" class="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold hover:bg-muted">Rejeter</button>
+                        @endif
+                        <button type="button" wire:click="startEdit" class="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold hover:bg-muted"><x-icon name="pencil" class="size-3.5" /> Modifier</button>
+                        <button type="button" wire:click="deleteMember({{ $detail->id }})" wire:confirm="Supprimer définitivement ce membre et toutes ses réponses ? Cette action est irréversible et sera consignée dans les rapports." class="rounded-lg bg-destructive-soft px-3 py-1.5 text-xs font-semibold text-destructive hover:brightness-95"><x-icon name="trash" class="size-3.5" /> Supprimer</button>
+                    </div>
+                @endif
+            </div>
+        </div>
+    @endif
 </div>
