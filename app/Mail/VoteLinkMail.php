@@ -16,6 +16,6 @@ class VoteLinkMail extends Mailable
     public function build(): self
     {
         return $this->subject('Votre lien de vote — '.$this->voter->election->title)
-            ->view('emails.vote-link');
+            ->markdown('emails.vote-link');
     }
 }
