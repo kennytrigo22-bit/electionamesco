@@ -107,6 +107,13 @@ new #[Layout('layouts.admin', ['title' => 'Membres'])] class extends Component
         }
     }
 
+    public function toggleSelectAll(array $pageIds): void
+    {
+        $this->selected = count(array_intersect($pageIds, $this->selected)) === count($pageIds)
+            ? array_values(array_diff($this->selected, $pageIds))
+            : array_values(array_unique([...$this->selected, ...$pageIds]));
+    }
+
     public function updatedCriterionFieldId(): void
     {
         $this->criterionValue = '';
@@ -286,7 +293,7 @@ new #[Layout('layouts.admin', ['title' => 'Membres'])] class extends Component
         <table class="w-full text-sm">
             <thead class="bg-muted/60 text-xs uppercase text-muted-foreground">
                 <tr>
-                    <th class="w-10 px-4 py-3"></th>
+                    <th class="w-10 px-4 py-3"><input type="checkbox" wire:click="toggleSelectAll({{ json_encode($members->pluck('id')->all()) }})" @checked($members->isNotEmpty() && $members->pluck('id')->diff($selected)->isEmpty()) class="rounded border-border"></th>
                     <th class="px-4 py-3 text-left">Membre</th>
                     <th class="px-4 py-3 text-left">Formulaire</th>
                     <th class="px-4 py-3 text-left">Date</th>

@@ -109,33 +109,52 @@ new #[Layout('layouts.admin', ['title' => 'Invitations de vote'])] class extends
         abort_unless($voter->election_id === $this->election->id, 403);
         abort_if($voter->hasVoted(), 403);
         $voter->update(['token' => (string) \Illuminate\Support\Str::uuid(), 'email_sent_at' => null]);
-        ActivityLog::record('invitation.revoked', "Lien de vote régénéré pour {$voter->name}");
+        ActivityLog::record('invitation.revoked', "Lien de vote régénéré pour {$voter->displayName()}");
     }
 
     public function sendEmails(): void
     {
         $voters = $this->election->voters()->whereNull('email_sent_at')->get();
+        $sent = 0;
+        $failed = 0;
+
         foreach ($voters as $voter) {
-            SendVoteLinkEmail::dispatch($voter);
+            try {
+                SendVoteLinkEmail::dispatch($voter);
+                $sent++;
+            } catch (\Throwable $e) {
+                $failed++;
+                report($e);
+            }
         }
-        ActivityLog::record('invitations.sent', "Envoi de {$voters->count()} invitation(s) pour « {$this->election->title} »");
-        session()->flash('status', "Envoi de {$voters->count()} email(s) en cours.");
+
+        ActivityLog::record('invitations.sent', "Envoi de {$sent} invitation(s) pour « {$this->election->title} »".($failed ? " ({$failed} échec(s))" : ''));
+
+        session()->flash($failed && ! $sent ? 'error' : 'status', $failed
+            ? "{$sent} email(s) envoyé(s), {$failed} échec(s). Vérifiez la configuration SMTP (MAIL_* dans .env)."
+            : "{$sent} email(s) envoyé(s) avec succès.");
     }
 
     public function resend(ElectionVoter $voter): void
     {
         abort_unless($voter->election_id === $this->election->id, 403);
-        SendVoteLinkEmail::dispatch($voter);
-        session()->flash('status', "Invitation relancée pour {$voter->name}.");
+
+        try {
+            SendVoteLinkEmail::dispatch($voter);
+            session()->flash('status', "Invitation relancée pour {$voter->displayName()}.");
+        } catch (\Throwable $e) {
+            report($e);
+            session()->flash('error', "Échec de l'envoi pour {$voter->displayName()}. Vérifiez la configuration SMTP.");
+        }
     }
 
     public function exportExcel()
     {
-        $voters = $this->election->voters()->with('ballot')->get();
+        $voters = $this->election->voters()->with(['ballot', 'submission.values.field'])->get();
 
         return ExcelExport::download(
             $voters->map(fn ($voter) => [
-                'Nom' => $voter->name,
+                'Nom' => $voter->displayName(),
                 'Email' => $voter->email,
                 'Téléphone' => $voter->phone,
                 'Urne assignée' => $voter->ballot?->title ?? '—',
@@ -155,7 +174,7 @@ new #[Layout('layouts.admin', ['title' => 'Invitations de vote'])] class extends
             $out = fopen('php://output', 'w');
             fputcsv($out, ['Nom', 'Email', 'Téléphone', 'Lien de vote unique', 'A voté']);
             foreach ($voters as $voter) {
-                fputcsv($out, [$voter->name, $voter->email, $voter->phone, $voter->voteUrl(), $voter->hasVoted() ? 'Oui' : 'Non']);
+                fputcsv($out, [$voter->displayName(), $voter->email, $voter->phone, $voter->voteUrl(), $voter->hasVoted() ? 'Oui' : 'Non']);
             }
             fclose($out);
         }, 'invitations-election-'.$this->election->id.'.csv');
@@ -163,7 +182,7 @@ new #[Layout('layouts.admin', ['title' => 'Invitations de vote'])] class extends
 
     public function with(): array
     {
-        $voters = $this->election->voters()->with('ballot')->orderBy('name');
+        $voters = $this->election->voters()->with(['ballot', 'submission.values.field'])->orderBy('name');
         if ($this->search !== '') {
             $voters->where(fn ($q) => $q->where('name', 'like', '%'.$this->search.'%')->orWhere('email', 'like', '%'.$this->search.'%'));
         }
@@ -195,6 +214,9 @@ new #[Layout('layouts.admin', ['title' => 'Invitations de vote'])] class extends
 
     @if (session('status'))
         <div class="mb-4 rounded-lg bg-success-soft text-success text-sm px-4 py-2">{{ session('status') }}</div>
+    @endif
+    @if (session('error'))
+        <div class="mb-4 rounded-lg bg-destructive-soft text-destructive text-sm px-4 py-2">{{ session('error') }}</div>
     @endif
 
     <div class="grid grid-cols-2 gap-4 sm:grid-cols-4 mb-6">
@@ -289,9 +311,9 @@ new #[Layout('layouts.admin', ['title' => 'Invitations de vote'])] class extends
             @forelse ($voters as $voter)
                 <div class="py-3 flex flex-wrap items-center justify-between gap-3">
                     <div class="flex items-center gap-2">
-                        <x-person-avatar :name="$voter->name" class="size-7" />
+                        <x-person-avatar :name="$voter->displayName()" class="size-7" />
                         <div>
-                            <p class="font-medium text-sm">{{ $voter->name }}</p>
+                            <p class="font-medium text-sm">{{ $voter->displayName() }}</p>
                             <p class="text-xs text-muted-foreground">{{ $voter->email }}</p>
                             @if ($voter->ballot)
                                 <p class="text-xs text-primary">Urne : {{ $voter->ballot->title }}</p>
@@ -309,7 +331,7 @@ new #[Layout('layouts.admin', ['title' => 'Invitations de vote'])] class extends
                         <label class="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
                             <input type="checkbox" {{ $voter->email_sent_at ? 'checked' : '' }} wire:click="toggleSent({{ $voter->id }})" class="rounded border-border"> Lien envoyé
                         </label>
-                        <button type="button" x-data="{ copied: false }" @click="navigator.clipboard.writeText('{{ $voter->voteUrl() }}'); copied = true; setTimeout(() => copied = false, 1600)" class="text-xs font-medium text-primary hover:underline">
+                        <button type="button" x-data="{ copied: false }" @click="amescoCopy('{{ $voter->voteUrl() }}'); copied = true; setTimeout(() => copied = false, 1600)" class="text-xs font-medium text-primary hover:underline">
                             <span x-text="copied ? 'Copié' : 'Copier le lien'"></span>
                         </button>
                         @if ($voter->ballot)

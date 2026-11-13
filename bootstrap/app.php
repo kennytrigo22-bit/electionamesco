@@ -1,10 +1,12 @@
 <?php
 
 use App\Http\Middleware\EnsureUserHasFunction;
+use App\Http\Middleware\PreventDynamicPageCaching;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
+use Illuminate\Session\TokenMismatchException;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -16,9 +18,24 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'function' => EnsureUserHasFunction::class,
         ]);
+
+        $middleware->trustProxies(at: '*');
+
+        $middleware->web(append: [
+            PreventDynamicPageCaching::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/*') || $request->expectsJson(),
         );
+
+        $exceptions->render(function (TokenMismatchException $e, Request $request) {
+            if ($request->header('X-Livewire') || $request->expectsJson()) {
+                return response()->json(['message' => 'Session expirée, merci de recharger la page.'], 419);
+            }
+
+            return redirect($request->fullUrlWithoutQuery([]) ?: '/')
+                ->with('error', "Votre session a expiré. Merci de réessayer, l'opération n'a pas été enregistrée.");
+        });
     })->create();

@@ -4,15 +4,20 @@ namespace App\Jobs;
 
 use App\Mail\VoteLinkMail;
 use App\Models\ElectionVoter;
-use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Mail;
 
-class SendVoteLinkEmail implements ShouldQueue
+/**
+ * Sent synchronously (not queued): shared hosting rarely runs a persistent queue
+ * worker, so a queued mail job would silently never be processed.
+ */
+class SendVoteLinkEmail
 {
-    use Queueable;
-
     public function __construct(public ElectionVoter $voter) {}
+
+    public static function dispatch(ElectionVoter $voter): void
+    {
+        (new self($voter))->handle();
+    }
 
     public function handle(): void
     {

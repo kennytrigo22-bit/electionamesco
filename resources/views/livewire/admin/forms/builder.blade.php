@@ -86,15 +86,15 @@ new #[Layout('layouts.admin', ['title' => 'Constructeur de formulaire'])] class 
         $this->ensureOwned($field);
 
         $this->activeFieldId = $field->id;
-        $this->showRules = (bool) $field->condition_field_id;
+        $this->showRules = $field->hasConditions();
         $this->draft = [
             'label' => $field->label,
             'type' => $field->type,
             'options' => implode("\n", $field->options ?? []),
             'is_required' => $field->is_required,
             'is_identity_name' => $field->is_identity_name,
-            'condition_field_id' => $field->condition_field_id,
-            'condition_value' => $field->condition_value,
+            'conditions' => $field->conditions ?? [],
+            'condition_logic' => $field->condition_logic ?? 'and',
         ];
     }
 
@@ -111,6 +111,11 @@ new #[Layout('layouts.admin', ['title' => 'Constructeur de formulaire'])] class 
             return;
         }
 
+        $this->persistDraft();
+    }
+
+    protected function persistDraft(): void
+    {
         $field = FormField::find($this->activeFieldId);
         if (! $field) {
             return;
@@ -119,15 +124,33 @@ new #[Layout('layouts.admin', ['title' => 'Constructeur de formulaire'])] class 
         $options = FormField::TYPES_WITH_OPTIONS;
         $hasOptions = in_array($this->draft['type'], $options, true) && ! in_array($this->draft['type'], ['country', 'institution', 'level'], true);
 
+        $conditions = collect($this->draft['conditions'] ?? [])
+            ->filter(fn ($c) => ! empty($c['field_id']) && $c['value'] !== null && $c['value'] !== '')
+            ->map(fn ($c) => ['field_id' => (int) $c['field_id'], 'value' => $c['value']])
+            ->values()
+            ->all();
+
         $field->update([
             'label' => $this->draft['label'] ?: $field->label,
             'type' => $this->draft['type'],
             'options' => $hasOptions ? array_values(array_filter(array_map('trim', explode("\n", $this->draft['options'] ?? '')))) : null,
             'is_required' => (bool) $this->draft['is_required'],
             'is_identity_name' => (bool) $this->draft['is_identity_name'],
-            'condition_field_id' => $this->draft['condition_field_id'] ?: null,
-            'condition_value' => $this->draft['condition_field_id'] ? ($this->draft['condition_value'] ?? null) : null,
+            'conditions' => $conditions ?: null,
+            'condition_logic' => $this->draft['condition_logic'] ?? 'and',
         ]);
+    }
+
+    public function addConditionRow(): void
+    {
+        $this->draft['conditions'][] = ['field_id' => null, 'value' => null];
+    }
+
+    public function removeConditionRow(int $index): void
+    {
+        unset($this->draft['conditions'][$index]);
+        $this->draft['conditions'] = array_values($this->draft['conditions']);
+        $this->persistDraft();
     }
 
     public function addField(int $sectionId, string $type = 'text'): void
@@ -220,14 +243,12 @@ new #[Layout('layouts.admin', ['title' => 'Constructeur de formulaire'])] class 
                 <button type="button" wire:click="$set('mode', 'preview')" class="inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-xs font-semibold {{ $mode === 'preview' ? 'bg-card text-foreground shadow-card' : 'text-muted-foreground' }}"><x-icon name="eye" class="size-3.5" /> Aperçu</button>
             </div>
             <a href="{{ route('admin.forms.settings', $form) }}" wire:navigate class="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border px-3 text-xs font-semibold hover:bg-muted"><x-icon name="settings" class="size-3.5" /> Paramètres</a>
-            <button type="button" x-data @click="navigator.clipboard.writeText('{{ $publicUrl }}'); $tooltip='Copié'" class="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border px-3 text-xs font-semibold hover:bg-muted"><x-icon name="link" class="size-3.5" /> Copier le lien</button>
-            <label class="flex h-8 items-center gap-2 rounded-lg border border-border px-3 text-xs font-semibold">
-                <input type="checkbox" class="sr-only peer" {{ $form->status === 'open' ? 'checked' : '' }} wire:click="togglePublished">
-                <span class="relative inline-flex h-4 w-7 items-center rounded-full bg-muted peer-checked:bg-primary transition">
-                    <span class="size-3 translate-x-0.5 rounded-full bg-white transition peer-checked:translate-x-3.5"></span>
-                </span>
-                {{ $form->status === 'open' ? 'Publié' : 'Brouillon' }}
-            </label>
+            <button type="button" x-data="{ copied: false }" @click="amescoCopy('{{ $publicUrl }}'); copied = true; setTimeout(() => copied = false, 1600)" class="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border px-3 text-xs font-semibold hover:bg-muted"><x-icon name="link" class="size-3.5" /> <span x-text="copied ? 'Copié !' : 'Copier le lien'"></span></button>
+            @if ($form->status === 'open')
+                <button type="button" wire:click="togglePublished" class="inline-flex h-8 items-center gap-1.5 rounded-lg border border-success bg-success-soft px-3 text-xs font-semibold text-success hover:brightness-95"><x-icon name="check" class="size-3.5" /> Publié · Repasser en brouillon</button>
+            @else
+                <button type="button" wire:click="togglePublished" class="inline-flex h-8 items-center gap-1.5 rounded-lg bg-primary px-4 text-xs font-bold text-white shadow-card hover:bg-primary-deep"><x-icon name="link" class="size-3.5" /> Publier le formulaire</button>
+            @endif
         </div>
     </div>
 
@@ -254,8 +275,8 @@ new #[Layout('layouts.admin', ['title' => 'Constructeur de formulaire'])] class 
                             <div class="mt-5 space-y-4">
                                 @foreach ($section->fields as $field)
                                     <div>
-                                        @if ($field->condition_field_id)
-                                            <p class="mb-1 inline-flex items-center gap-1 rounded bg-gold-soft px-1.5 py-px text-[11px] font-medium text-gold-foreground"><x-icon name="git-branch" class="size-3" /> Visible si une condition est remplie</p>
+                                        @if ($field->hasConditions())
+                                            <p class="mb-1 inline-flex items-center gap-1 rounded bg-gold-soft px-1.5 py-px text-[11px] font-medium text-gold-foreground"><x-icon name="git-branch" class="size-3" /> Visible si {{ $field->condition_logic === 'or' ? 'une des conditions' : 'toutes les conditions' }} {{ count($field->conditions) > 1 ? 'sont remplies' : 'est remplie' }}</p>
                                         @endif
                                         <label class="text-sm font-medium">{{ $field->label }}@if($field->is_required)<span class="text-destructive"> *</span>@endif</label>
                                         <p class="text-xs text-muted-foreground mt-0.5">{{ $types[$field->type] }}@if($field->hasOptions()) — {{ implode(', ', $field->effectiveOptions()) }}@endif</p>
@@ -297,7 +318,7 @@ new #[Layout('layouts.admin', ['title' => 'Constructeur de formulaire'])] class 
                                         <button type="button" wire:click="selectField({{ $field->id }})" class="block w-full px-5 py-4 text-left">
                                             <div class="mb-2 flex items-center gap-2 text-[11px] font-medium text-muted-foreground">
                                                 {{ $types[$field->type] }}
-                                                @if ($field->condition_field_id)
+                                                @if ($field->hasConditions())
                                                     <span class="inline-flex items-center gap-1 rounded bg-gold-soft px-1.5 py-px text-gold-foreground"><x-icon name="git-branch" class="size-3" /> Conditionnelle</span>
                                                 @endif
                                                 @if ($field->is_identity_name)
@@ -339,24 +360,41 @@ new #[Layout('layouts.admin', ['title' => 'Constructeur de formulaire'])] class 
 
                                             @if ($showRules)
                                                 <div class="mt-3 rounded-lg border border-border bg-surface p-3">
-                                                    <label class="flex items-center gap-1.5 text-xs font-semibold text-foreground"><x-icon name="git-branch" class="size-3.5 text-gold-foreground" /> Afficher cette question uniquement si…</label>
-                                                    <div class="mt-1 flex flex-col gap-2 sm:flex-row">
-                                                        <select wire:model.live="draft.condition_field_id" class="h-9 flex-1 rounded-md border border-border bg-card px-2 text-sm">
-                                                            <option value="">Toujours afficher</option>
-                                                            @foreach ($optionFields as $of)
-                                                                @continue($of->id === $field->id)
-                                                                <option value="{{ $of->id }}">{{ $of->label }}</option>
-                                                            @endforeach
-                                                        </select>
-                                                        @if (!empty($draft['condition_field_id']))
-                                                            @php $src = $optionFields->firstWhere('id', (int) $draft['condition_field_id']); @endphp
-                                                            <select wire:model.live="draft.condition_value" class="h-9 flex-1 rounded-md border border-border bg-card px-2 text-sm">
-                                                                @foreach ($src?->effectiveOptions() ?? [] as $option)
-                                                                    <option value="{{ $option }}">{{ $option }}</option>
-                                                                @endforeach
+                                                    <div class="flex items-center justify-between">
+                                                        <label class="flex items-center gap-1.5 text-xs font-semibold text-foreground"><x-icon name="git-branch" class="size-3.5 text-gold-foreground" /> Afficher cette question uniquement si…</label>
+                                                        @if (count($draft['conditions'] ?? []) > 1)
+                                                            <select wire:model.live="draft.condition_logic" class="h-7 rounded-md border border-border bg-card px-2 text-xs font-semibold">
+                                                                <option value="and">ET (toutes)</option>
+                                                                <option value="or">OU (au moins une)</option>
                                                             </select>
                                                         @endif
                                                     </div>
+
+                                                    <div class="mt-2 space-y-2">
+                                                        @foreach ($draft['conditions'] ?? [] as $ci => $condition)
+                                                            <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+                                                                <select wire:model.live="draft.conditions.{{ $ci }}.field_id" class="h-9 flex-1 rounded-md border border-border bg-card px-2 text-sm">
+                                                                    <option value="">— Choisir un champ —</option>
+                                                                    @foreach ($optionFields as $of)
+                                                                        @continue($of->id === $field->id)
+                                                                        <option value="{{ $of->id }}">{{ $of->label }}</option>
+                                                                    @endforeach
+                                                                </select>
+                                                                @if (!empty($condition['field_id']))
+                                                                    @php $src = $optionFields->firstWhere('id', (int) $condition['field_id']); @endphp
+                                                                    <select wire:model.live="draft.conditions.{{ $ci }}.value" class="h-9 flex-1 rounded-md border border-border bg-card px-2 text-sm">
+                                                                        <option value="">—</option>
+                                                                        @foreach ($src?->effectiveOptions() ?? [] as $option)
+                                                                            <option value="{{ $option }}">{{ $option }}</option>
+                                                                        @endforeach
+                                                                    </select>
+                                                                @endif
+                                                                <button type="button" wire:click="removeConditionRow({{ $ci }})" class="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-danger-soft hover:text-destructive"><x-icon name="trash" class="size-4" /></button>
+                                                            </div>
+                                                        @endforeach
+                                                    </div>
+
+                                                    <button type="button" wire:click="addConditionRow" class="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline"><x-icon name="plus" class="size-3.5" /> Ajouter une condition</button>
                                                 </div>
                                             @endif
 
@@ -418,7 +456,7 @@ new #[Layout('layouts.admin', ['title' => 'Constructeur de formulaire'])] class 
                             <p class="text-xs font-semibold text-foreground">Lien public</p>
                             <p class="mt-1 break-all font-mono text-[11px] text-muted-foreground">{{ $publicUrl }}</p>
                             <div class="mt-2 flex gap-2">
-                                <button type="button" x-data @click="navigator.clipboard.writeText('{{ $publicUrl }}')" class="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-semibold hover:bg-muted"><x-icon name="copy" class="size-3.5" /> Copier</button>
+                                <button type="button" x-data="{ copied: false }" @click="amescoCopy('{{ $publicUrl }}'); copied = true; setTimeout(() => copied = false, 1600)" class="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-semibold hover:bg-muted"><x-icon name="copy" class="size-3.5" /> <span x-text="copied ? 'Copié !' : 'Copier'"></span></button>
                                 <a href="{{ $publicUrl }}" target="_blank" class="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-primary hover:bg-primary-soft"><x-icon name="link" class="size-3.5" /> Ouvrir</a>
                             </div>
                         </div>

@@ -25,7 +25,7 @@ new #[Layout('layouts.public')] class extends Component
 
     public function mount(string $token): void
     {
-        $voter = ElectionVoter::where('token', $token)->with('election.ballots.candidates')->first();
+        $voter = ElectionVoter::where('token', $token)->with(['election.ballots.candidates', 'submission.values.field'])->first();
 
         if (! $voter || ! $voter->election->isOpen() || $voter->hasVoted()) {
             $this->invalid = true;
@@ -136,7 +136,7 @@ new #[Layout('layouts.public')] class extends Component
             <h1 class="text-xl font-bold mb-2">{{ $voter->election->title }}</h1>
             <p class="text-sm text-muted-foreground mb-4">{{ $voter->election->description }}</p>
             <div class="rounded-lg bg-muted/60 p-4 text-left text-sm space-y-1 mb-6">
-                <p>Bonjour <strong>{{ $voter->name }}</strong>, votre participation a été vérifiée.</p>
+                <p>Bonjour <strong>{{ $voter->displayName() }}</strong>, votre participation a été vérifiée.</p>
                 <p class="text-muted-foreground">Vous allez voter pour {{ $this->ballots()->count() }} urne(s). Votre vote est anonyme et ne peut être modifié après envoi.</p>
             </div>
             <button type="button" wire:click="begin" class="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-white hover:bg-primary-deep">Continuer</button>

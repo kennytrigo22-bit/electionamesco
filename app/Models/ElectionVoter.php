@@ -45,6 +45,11 @@ class ElectionVoter extends Model
         return $this->used_at !== null;
     }
 
+    public function displayName(): string
+    {
+        return $this->submission?->displayName() ?: $this->name;
+    }
+
     public function voteUrl(): string
     {
         return route('vote.show', ['token' => $this->token]);

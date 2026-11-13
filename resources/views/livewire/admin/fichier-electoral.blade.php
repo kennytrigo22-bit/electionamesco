@@ -25,6 +25,13 @@ new #[Layout('layouts.admin', ['title' => 'Fichier électoral'])] class extends 
 
     public ?FormSubmission $detail = null;
 
+    public function toggleSelectAll(array $pageIds): void
+    {
+        $this->selected = count(array_intersect($pageIds, $this->selected)) === count($pageIds)
+            ? array_values(array_diff($this->selected, $pageIds))
+            : array_values(array_unique([...$this->selected, ...$pageIds]));
+    }
+
     public function updatedCriterionFieldId(): void
     {
         $this->criterionValue = '';
@@ -73,6 +80,24 @@ new #[Layout('layouts.admin', ['title' => 'Fichier électoral'])] class extends 
         }
 
         $this->selected = [];
+    }
+
+    public function bulkSetEligibilityForFiltered(string $eligibility): void
+    {
+        if (Setting::get('electoral_register_locked_at')) {
+            session()->flash('error', 'Le fichier électoral est verrouillé. Déverrouillez-le avant de modifier une éligibilité.');
+
+            return;
+        }
+
+        $count = 0;
+        foreach ($this->filteredQuery()->get() as $submission) {
+            $submission->update(['eligibility' => $eligibility]);
+            ActivityLog::record('eligibility.updated', "Éligibilité de « {$submission->displayName()} » : ".$submission->eligibilityLabel(), $submission);
+            $count++;
+        }
+
+        session()->flash('status', "{$count} électeur(s) filtré(s) mis à jour.");
     }
 
     public function lockRegister(): void
@@ -158,6 +183,9 @@ new #[Layout('layouts.admin', ['title' => 'Fichier électoral'])] class extends 
         </div>
     @endif
 
+    @if (session('status'))
+        <div class="mb-4 rounded-lg bg-success-soft text-success text-sm px-4 py-2">{{ session('status') }}</div>
+    @endif
     @if (session('error'))
         <div class="mb-4 rounded-lg bg-destructive-soft text-destructive text-sm px-4 py-2">{{ session('error') }}</div>
     @endif
@@ -204,6 +232,14 @@ new #[Layout('layouts.admin', ['title' => 'Fichier électoral'])] class extends 
                 <button type="button" wire:click="resetFilters" class="text-sm font-medium text-muted-foreground hover:text-foreground">Réinitialiser les filtres</button>
             </div>
         </div>
+        @if ($criterionFieldId && $criterionValue !== '')
+            <div class="mb-4 flex flex-wrap items-center gap-3 rounded-lg bg-gold-soft px-4 py-2.5 text-sm">
+                <span class="font-semibold text-gold-foreground">Appliquer à tous les résultats filtrés ({{ $voters->total() }}) :</span>
+                <button type="button" wire:click="bulkSetEligibilityForFiltered('eligible')" wire:confirm="Rendre éligibles tous les électeurs correspondant à ce filtre ?" class="font-semibold text-primary hover:underline">Rendre éligible</button>
+                <button type="button" wire:click="bulkSetEligibilityForFiltered('non_eligible')" wire:confirm="Exclure tous les électeurs correspondant à ce filtre ?" class="font-semibold text-destructive hover:underline">Rendre non éligible</button>
+                <button type="button" wire:click="bulkSetEligibilityForFiltered('verification')" wire:confirm="Marquer « à vérifier » tous les électeurs correspondant à ce filtre ?" class="font-semibold text-gold-foreground hover:underline">À vérifier</button>
+            </div>
+        @endif
     @endif
 
     @if ($selected)
@@ -220,7 +256,7 @@ new #[Layout('layouts.admin', ['title' => 'Fichier électoral'])] class extends 
         <table class="w-full text-sm">
             <thead class="bg-muted/60 text-xs uppercase text-muted-foreground">
                 <tr>
-                    <th class="w-10 px-4 py-3"></th>
+                    <th class="w-10 px-4 py-3"><input type="checkbox" wire:click="toggleSelectAll({{ json_encode($voters->pluck('id')->all()) }})" @checked($voters->isNotEmpty() && $voters->pluck('id')->diff($selected)->isEmpty()) class="rounded border-border"></th>
                     <th class="px-4 py-3 text-left">Électeur</th>
                     <th class="px-4 py-3 text-left">Formulaire source</th>
                     <th class="px-4 py-3 text-left">Éligibilité</th>

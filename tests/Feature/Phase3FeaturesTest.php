@@ -8,6 +8,7 @@ use App\Models\Form;
 use App\Models\FormSubmission;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cookie;
 use Livewire\Volt\Volt;
 use Tests\TestCase;
 
@@ -41,7 +42,7 @@ class Phase3FeaturesTest extends TestCase
 
         $form->fields()->create([
             'form_section_id' => $section->id, 'type' => 'text', 'label' => 'Structure de stage', 'is_required' => true,
-            'condition_field_id' => $statut->id, 'condition_value' => 'Stagiaire', 'order' => 3,
+            'conditions' => [['field_id' => $statut->id, 'value' => 'Stagiaire']], 'order' => 3,
         ]);
 
         return $form->fresh(['sections.fields', 'fields']);
@@ -72,7 +73,7 @@ class Phase3FeaturesTest extends TestCase
         $this->assertSame(1, FormSubmission::count());
     }
 
-    public function test_une_seconde_inscription_avec_un_email_different_mais_le_meme_appareil_est_refusee(): void
+    public function test_une_premiere_inscription_depose_un_cookie_de_blocage_par_appareil(): void
     {
         $form = $this->makeCensusForm();
         $fields = $form->fields;
@@ -85,13 +86,30 @@ class Phase3FeaturesTest extends TestCase
             ->call('submit')
             ->assertSet('submitted', true);
 
-        $component2 = Volt::test('public.form-fill', ['form' => $form])
-            ->set("values.{$emailField->id}", 'second@example.com')
-            ->set("values.{$statutField->id}", 'Étudiant')
-            ->call('submit');
+        $this->assertNotNull(Cookie::queued('amesco_submitted_'.$form->id));
+    }
 
-        $component2->assertSet('submitted', false);
-        $this->assertSame(1, FormSubmission::count());
+    public function test_deux_personnes_differentes_sur_le_meme_reseau_ne_sont_pas_bloquees(): void
+    {
+        $form = $this->makeCensusForm();
+        $fields = $form->fields;
+        $emailField = $fields->firstWhere('type', 'email');
+        $statutField = $fields->firstWhere('label', 'Statut');
+
+        Volt::test('public.form-fill', ['form' => $form])
+            ->set("values.{$emailField->id}", 'frere1@example.com')
+            ->set("values.{$statutField->id}", 'Étudiant')
+            ->call('submit')
+            ->assertSet('submitted', true);
+
+        // Même adresse IP (même wifi familial), appareil et e-mail différents : ne doit pas être bloqué.
+        Volt::test('public.form-fill', ['form' => $form])
+            ->set("values.{$emailField->id}", 'frere2@example.com')
+            ->set("values.{$statutField->id}", 'Étudiant')
+            ->call('submit')
+            ->assertSet('submitted', true);
+
+        $this->assertSame(2, FormSubmission::count());
     }
 
     public function test_un_champ_conditionnel_nest_pas_obligatoire_quand_il_est_masque(): void
@@ -150,5 +168,44 @@ class Phase3FeaturesTest extends TestCase
         $submission->values()->create(['form_field_id' => $last->id, 'value' => 'MALONGA']);
 
         $this->assertSame('Grâce MALONGA', $submission->fresh(['form.fields', 'values'])->displayName());
+    }
+
+    public function test_un_champ_avec_plusieurs_conditions_respecte_le_logique_et_ou_ou(): void
+    {
+        $form = $this->makeCensusForm();
+        $statutField = $form->fields->firstWhere('label', 'Statut');
+
+        $villeField = $form->fields()->create([
+            'form_section_id' => $statutField->form_section_id, 'type' => 'select', 'label' => 'Ville',
+            'options' => ['Dakar', 'Thiès'], 'order' => 4,
+        ]);
+
+        $andField = $form->fields()->create([
+            'form_section_id' => $statutField->form_section_id, 'type' => 'text', 'label' => 'Champ ET', 'order' => 5,
+            'conditions' => [
+                ['field_id' => $statutField->id, 'value' => 'Stagiaire'],
+                ['field_id' => $villeField->id, 'value' => 'Dakar'],
+            ],
+            'condition_logic' => 'and',
+        ]);
+
+        $orField = $form->fields()->create([
+            'form_section_id' => $statutField->form_section_id, 'type' => 'text', 'label' => 'Champ OU', 'order' => 6,
+            'conditions' => [
+                ['field_id' => $statutField->id, 'value' => 'Stagiaire'],
+                ['field_id' => $villeField->id, 'value' => 'Dakar'],
+            ],
+            'condition_logic' => 'or',
+        ]);
+
+        $onlyStatut = [$statutField->id => 'Stagiaire', $villeField->id => 'Thiès'];
+        $both = [$statutField->id => 'Stagiaire', $villeField->id => 'Dakar'];
+        $neither = [$statutField->id => 'Étudiant', $villeField->id => 'Thiès'];
+
+        $this->assertFalse($andField->isVisibleFor($onlyStatut));
+        $this->assertTrue($andField->isVisibleFor($both));
+
+        $this->assertTrue($orField->isVisibleFor($onlyStatut));
+        $this->assertFalse($orField->isVisibleFor($neither));
     }
 }

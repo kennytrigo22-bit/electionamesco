@@ -43,6 +43,10 @@ export default {
                 background: '#F6F8F6',
                 foreground: '#18231F',
                 border: '#E4E9E4',
+                card: {
+                    DEFAULT: '#FFFFFF',
+                    foreground: '#18231F',
+                },
                 muted: {
                     DEFAULT: '#F1F4F1',
                     foreground: '#5B6B60',

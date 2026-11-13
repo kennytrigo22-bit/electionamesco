@@ -1,11 +1,20 @@
 <?php
 
+use App\Models\ActivityLog;
 use App\Models\Election;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 
 new #[Layout('layouts.admin', ['title' => 'Élections'])] class extends Component
 {
+    public function updateStatus(Election $election, string $status): void
+    {
+        abort_unless(array_key_exists($status, Election::STATUS_LABELS), 404);
+
+        $election->update(['status' => $status]);
+        ActivityLog::record('election.status_changed', "Élection « {$election->title} » : statut changé en « {$election->statusLabel()} »", $election);
+    }
+
     public function with(): array
     {
         return ['elections' => Election::withCount(['voters', 'ballots'])->latest()->get()];
@@ -30,6 +39,11 @@ new #[Layout('layouts.admin', ['title' => 'Élections'])] class extends Componen
                 </div>
                 <div class="flex items-center gap-3">
                     <x-status-badge :tone="match($election->status) { 'open' => 'success', 'draft' => 'muted', 'scheduled' => 'primary', 'closed' => 'destructive' }">{{ $election->statusLabel() }}</x-status-badge>
+                    <select wire:change="updateStatus({{ $election->id }}, $event.target.value)" class="rounded-lg border-border text-xs font-semibold" title="Changer le statut">
+                        @foreach (\App\Models\Election::STATUS_LABELS as $value => $label)
+                            <option value="{{ $value }}" @selected($election->status === $value)>{{ $label }}</option>
+                        @endforeach
+                    </select>
                     <a href="{{ route('admin.elections.builder', $election) }}" wire:navigate class="text-sm font-medium text-primary hover:underline">Urnes</a>
                     <a href="{{ route('admin.votes.invitations', $election) }}" wire:navigate class="text-sm font-medium text-primary hover:underline">Invitations</a>
                     <a href="{{ route('admin.votes.show', $election) }}" wire:navigate class="text-sm font-medium text-primary hover:underline">Suivi</a>

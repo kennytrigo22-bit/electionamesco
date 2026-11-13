@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 #[Fillable([
     'form_id', 'form_section_id', 'label', 'type', 'options', 'is_required', 'is_identity_name',
-    'condition_field_id', 'condition_value', 'order',
+    'conditions', 'condition_logic', 'order',
 ])]
 class FormField extends Model
 {
@@ -54,6 +54,7 @@ class FormField extends Model
             'options' => 'array',
             'is_required' => 'boolean',
             'is_identity_name' => 'boolean',
+            'conditions' => 'array',
         ];
     }
 
@@ -67,29 +68,35 @@ class FormField extends Model
         return $this->belongsTo(FormSection::class, 'form_section_id');
     }
 
-    public function condition(): BelongsTo
-    {
-        return $this->belongsTo(self::class, 'condition_field_id');
-    }
-
     public function hasOptions(): bool
     {
         return in_array($this->type, self::TYPES_WITH_OPTIONS, true);
     }
 
+    public function hasConditions(): bool
+    {
+        return ! empty($this->conditions);
+    }
+
     public function isVisibleFor(array $values): bool
     {
-        if (! $this->condition_field_id) {
+        $conditions = $this->conditions ?? [];
+
+        if (empty($conditions)) {
             return true;
         }
 
-        $value = $values[$this->condition_field_id] ?? null;
+        $results = array_map(function (array $condition) use ($values) {
+            $value = $values[$condition['field_id']] ?? null;
 
-        if (is_array($value)) {
-            return in_array($this->condition_value, $value, true);
-        }
+            if (is_array($value)) {
+                return in_array($condition['value'], $value, true);
+            }
 
-        return (string) $value === (string) $this->condition_value;
+            return (string) $value === (string) $condition['value'];
+        }, $conditions);
+
+        return $this->condition_logic === 'or' ? in_array(true, $results, true) : ! in_array(false, $results, true);
     }
 
     public function fixedOptions(): ?array

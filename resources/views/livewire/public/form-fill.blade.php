@@ -84,10 +84,6 @@ new #[Layout('layouts.public')] class extends Component
         if ($this->form->one_response_per_person) {
             $alreadySubmittedOnThisDevice = request()->cookie($deviceCookie) !== null;
 
-            $alreadySubmittedFromThisNetwork = FormSubmission::where('form_id', $this->form->id)
-                ->where('ip_address', request()->ip())
-                ->exists();
-
             $alreadySubmittedWithThisEmail = false;
             $emailField = $this->form->fields->firstWhere('type', 'email');
 
@@ -101,7 +97,7 @@ new #[Layout('layouts.public')] class extends Component
                 }
             }
 
-            if ($alreadySubmittedOnThisDevice || $alreadySubmittedFromThisNetwork || $alreadySubmittedWithThisEmail) {
+            if ($alreadySubmittedOnThisDevice || $alreadySubmittedWithThisEmail) {
                 $this->duplicateError = 'Une inscription a déjà été envoyée depuis cet appareil ou cette adresse e-mail. Une seule réponse par personne est autorisée pour ce formulaire.';
 
                 return;
@@ -201,7 +197,12 @@ new #[Layout('layouts.public')] class extends Component
                     <div class="mb-4 rounded-lg bg-destructive-soft text-destructive text-sm px-3 py-2">{{ $duplicateError }}</div>
                 @endif
 
-                <form wire:submit="{{ $step + 1 === $form->sections->count() ? 'submit' : 'nextStep' }}" class="space-y-5">
+                <form wire:submit="{{ $step + 1 === $form->sections->count() ? 'submit' : 'nextStep' }}" class="space-y-5"
+                      x-data="{ uploading: false }"
+                      x-on:livewire-upload-start.window="uploading = true"
+                      x-on:livewire-upload-finish.window="uploading = false"
+                      x-on:livewire-upload-error.window="uploading = false"
+                      x-on:livewire-upload-cancel.window="uploading = false">
                     @foreach ($this->visibleFields($section) as $field)
                         <div wire:key="field-{{ $field->id }}">
                             <label class="text-sm font-medium">{{ $field->label }}@if ($field->is_required)<span class="text-destructive"> *</span>@endif</label>
@@ -269,8 +270,9 @@ new #[Layout('layouts.public')] class extends Component
                         @else
                             <span></span>
                         @endif
-                        <button type="submit" wire:loading.attr="disabled" wire:target="submit,nextStep" class="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-white hover:bg-primary-deep disabled:opacity-50">
-                            {{ $step + 1 === $form->sections->count() ? 'Envoyer mon inscription' : 'Continuer' }}
+                        <button type="submit" :disabled="uploading" wire:loading.attr="disabled" wire:target="submit,nextStep" class="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-white hover:bg-primary-deep disabled:opacity-50">
+                            <span x-show="!uploading">{{ $step + 1 === $form->sections->count() ? 'Envoyer mon inscription' : 'Continuer' }}</span>
+                            <span x-show="uploading">Téléversement du fichier…</span>
                         </button>
                     </div>
                 </form>

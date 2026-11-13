@@ -205,7 +205,7 @@ new #[Layout('layouts.admin', ['title' => 'Paramètres du formulaire'])] class e
                 </div>
                 <div class="flex items-center gap-2 rounded-lg border border-border bg-surface p-1 pl-3">
                     <span class="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">{{ $publicUrl }}</span>
-                    <button type="button" x-data="{ copied: false }" @click="navigator.clipboard.writeText('{{ $publicUrl }}'); copied = true; setTimeout(() => copied = false, 1600)" class="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-primary-deep">
+                    <button type="button" x-data="{ copied: false }" @click="amescoCopy('{{ $publicUrl }}'); copied = true; setTimeout(() => copied = false, 1600)" class="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-primary-deep">
                         <span x-text="copied ? 'Copié' : 'Copier'"></span>
                     </button>
                 </div>
@@ -215,7 +215,7 @@ new #[Layout('layouts.admin', ['title' => 'Paramètres du formulaire'])] class e
                     </div>
                     <p class="mt-3 text-center text-sm font-semibold">Scannez pour vous inscrire</p>
                     <p class="text-center text-xs text-muted-foreground">À imprimer sur les affiches des campus</p>
-                    <a href="https://api.qrserver.com/v1/create-qr-code/?size=500x500&data={{ urlencode($publicUrl) }}" download="qr-recensement-amesco.png" class="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-semibold hover:bg-muted"><x-icon name="download" class="size-3.5" /> Télécharger le QR code</a>
+                    <button type="button" onclick="amescoDownload('https://api.qrserver.com/v1/create-qr-code/?size=500x500&data={{ urlencode($publicUrl) }}', 'qr-recensement-amesco.png')" class="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-semibold hover:bg-muted"><x-icon name="download" class="size-3.5" /> Télécharger le QR code</button>
                 </div>
             </div>
 
