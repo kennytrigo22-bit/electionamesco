@@ -8,7 +8,10 @@ use App\Models\ElectionVoter;
 use App\Models\Form;
 use App\Models\FormSubmission;
 use App\Models\User;
+use Illuminate\Contracts\Debug\ExceptionHandler;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
+use Illuminate\Session\TokenMismatchException;
 use Illuminate\Support\Facades\Cookie;
 use Livewire\Volt\Volt;
 use Tests\TestCase;
@@ -260,5 +263,34 @@ class Phase3FeaturesTest extends TestCase
         Volt::test('admin.forms.index')->call('deleteForm', $form);
 
         $this->assertModelExists($form);
+    }
+
+    public function test_une_expiration_de_session_sur_une_requete_livewire_recoit_un_419_json_et_non_une_redirection(): void
+    {
+        // Laravel convertit TokenMismatchException en HttpException(419) avant de
+        // consulter les callbacks render() : un callback type-hinte directement sur
+        // TokenMismatchException n'est donc jamais appele, et le comportement par
+        // defaut de Laravel (page HTML "Page Expired") etait utilise meme pour une
+        // requete Livewire - ce qui, combine a d'autres facteurs, contribuait aux
+        // boucles "405 Method Not Allowed" sur /livewire/update.
+        $request = Request::create('/livewire/update', 'POST');
+        $request->headers->set('X-Livewire', '');
+
+        $response = app(ExceptionHandler::class)
+            ->render($request, new TokenMismatchException);
+
+        $this->assertSame(419, $response->getStatusCode());
+        $this->assertStringContainsString('application/json', (string) $response->headers->get('content-type'));
+    }
+
+    public function test_une_expiration_de_session_sur_une_requete_classique_est_redirigee_avec_un_message(): void
+    {
+        $request = Request::create('/formulaires/un-formulaire', 'POST');
+
+        $response = app(ExceptionHandler::class)
+            ->render($request, new TokenMismatchException);
+
+        $this->assertSame(302, $response->getStatusCode());
+        $this->assertStringEndsWith('/formulaires/un-formulaire', (string) $response->headers->get('location'));
     }
 }
