@@ -16,14 +16,16 @@
                 <img src="{{ asset('images/logo.png') }}" alt="AM.E.S.CO" class="h-10 w-auto">
                 <span class="font-extrabold tracking-tight">E-VOTE</span>
             </a>
-            <nav class="flex items-center gap-4 text-sm font-medium">
-                <a href="{{ route('vote.access') }}" wire:navigate class="hover:text-primary">Accéder à un vote</a>
-                @auth
-                    <a href="{{ route('admin.dashboard') }}" wire:navigate class="rounded-lg bg-primary px-3 py-1.5 text-white hover:bg-primary-deep">Administration</a>
-                @else
-                    <a href="{{ route('login') }}" wire:navigate class="rounded-lg border border-border px-3 py-1.5 hover:bg-muted">Connexion admin</a>
-                @endauth
-            </nav>
+            @unless ($hideNav ?? false)
+                <nav class="flex items-center gap-4 text-sm font-medium">
+                    <a href="{{ route('vote.access') }}" wire:navigate class="hover:text-primary">Accéder à un vote</a>
+                    @auth
+                        <a href="{{ route('admin.dashboard') }}" wire:navigate class="rounded-lg bg-primary px-3 py-1.5 text-white hover:bg-primary-deep">Administration</a>
+                    @else
+                        <a href="{{ route('login') }}" wire:navigate class="rounded-lg border border-border px-3 py-1.5 hover:bg-muted">Connexion admin</a>
+                    @endauth
+                </nav>
+            @endunless
         </div>
     </header>
 

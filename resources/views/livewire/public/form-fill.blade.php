@@ -8,7 +8,7 @@ use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 use Livewire\WithFileUploads;
 
-new #[Layout('layouts.public')] class extends Component
+new #[Layout('layouts.public', ['hideNav' => true])] class extends Component
 {
     use WithFileUploads;
 
