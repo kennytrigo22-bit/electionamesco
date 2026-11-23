@@ -22,9 +22,12 @@
     RewriteRule .* - [E=HTTP_X_XSRF_TOKEN:%{HTTP:X-XSRF-Token}]
 
     # Redirect Trailing Slashes If Not A Folder...
+    # Uses 308 (not 301): a 301 on a POST makes browsers replay the follow-up
+    # request as GET, which turned a Livewire AJAX update into a 405 whenever
+    # its URL carried a trailing slash. 308 preserves the method and body.
     RewriteCond %{REQUEST_FILENAME} !-d
     RewriteCond %{REQUEST_URI} (.+)/$
-    RewriteRule ^ %1 [L,R=301]
+    RewriteRule ^ %1 [L,R=308]
 
     # Send Requests To Front Controller...
     RewriteCond %{REQUEST_FILENAME} !-d
